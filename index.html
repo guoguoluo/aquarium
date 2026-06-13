@@ -1,0 +1,1111 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>深蓝水族箱：放置繁育图鉴（互动/拖拽/合成/求偶/修复出售按钮）</title>
+<style>
+  :root{
+    --bg0:#061424; --bg1:#08263a;
+    --ink:#cfeaff; --muted:#7fb6d6; --line:#2fb7ff55;
+    --panel:#071c2de6; --panel2:#072538cc;
+    --good:#48ffb5; --warn:#ffd27a; --bad:#ff6b6b;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%; margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "PingFang SC","Noto Sans CJK SC","Microsoft YaHei",sans-serif;
+    color:var(--ink);
+    background: radial-gradient(1200px 700px at 60% 20%, #0f5477 0%, var(--bg1) 40%, var(--bg0) 100%);
+    overflow:hidden;
+  }
+  .wrap{display:grid; grid-template-columns: 1.1fr 420px; height:100%; gap:12px; padding:12px;}
+  .stage{
+    position:relative; border:1px solid var(--line); border-radius:16px; overflow:hidden;
+    background:
+      radial-gradient(900px 400px at 30% 80%, #0b4a6a 0%, transparent 60%),
+      radial-gradient(700px 380px at 70% 35%, #0a3c58 0%, transparent 60%),
+      linear-gradient(180deg, #052033 0%, #041420 100%);
+    box-shadow: 0 0 40px #0008 inset, 0 0 30px #00b7ff18;
+    touch-action:none;
+  }
+  canvas{display:block; width:100%; height:100%;}
+  .hud{
+    position:absolute; left:12px; top:12px; right:12px;
+    display:flex; gap:10px; align-items:stretch; justify-content:space-between;
+    pointer-events:none;
+    z-index: 10; /* FIX: ensure HUD above canvas interaction */
+  }
+  .chip{
+    pointer-events:auto; display:flex; gap:10px; align-items:center;
+    padding:10px 12px; border:1px solid var(--line);
+    background:linear-gradient(180deg, var(--panel2), var(--panel));
+    border-radius:14px; box-shadow: 0 0 18px #00b7ff12 inset; backdrop-filter: blur(6px);
+  }
+  .chip .k{color:var(--muted); font-size:12px}
+  .chip .v{font-weight:700; letter-spacing:.2px}
+  .chip button{
+    border:1px solid var(--line); background:#071c2d; color:var(--ink);
+    padding:8px 10px; border-radius:10px; cursor:pointer;
+  }
+  .chip button:hover{border-color:#55d4ff; box-shadow:0 0 10px #3ad0ff22}
+
+  .side{
+    border:1px solid var(--line); border-radius:16px;
+    background: linear-gradient(180deg, var(--panel2), var(--panel));
+    overflow:hidden; display:flex; flex-direction:column;
+    box-shadow: 0 0 40px #0007 inset, 0 0 25px #00b7ff10;
+  }
+  .tabs{display:flex; gap:8px; padding:10px; border-bottom:1px solid var(--line); background:#071b2b;}
+  .tab{
+    flex:1; border:1px solid var(--line); border-radius:12px; padding:8px 10px;
+    background:#061a2a; cursor:pointer; text-align:center; font-size:13px; color:var(--muted);
+  }
+  .tab.active{color:var(--ink); border-color:#55d4ff; box-shadow:0 0 12px #3ad0ff22 inset;}
+  .panel{padding:10px; overflow:auto; flex:1;}
+  .section{border:1px solid var(--line); border-radius:14px; padding:10px; margin-bottom:10px; background:#061a2a;}
+  .section h3{margin:0 0 8px 0; font-size:13px; color:var(--muted); letter-spacing:.2px;}
+  .row{display:flex; gap:8px; flex-wrap:wrap; align-items:stretch;}
+  .card{
+    flex:1 1 185px; min-width:185px; border:1px solid var(--line);
+    border-radius:12px; padding:10px; background: linear-gradient(180deg, #061a2a, #051522);
+  }
+  .card .name{font-weight:700; display:flex; align-items:center; justify-content:space-between; gap:8px;}
+  .card .desc{font-size:12px; color:var(--muted); margin-top:6px; line-height:1.35}
+  .card .meta{display:flex; gap:10px; margin-top:8px; font-size:12px; color:#bfe7ff; flex-wrap:wrap;}
+  .card button{
+    width:100%; margin-top:10px; border:1px solid var(--line);
+    background:#071c2d; color:var(--ink); padding:9px 10px; border-radius:10px; cursor:pointer;
+  }
+  .card button:hover{border-color:#55d4ff; box-shadow:0 0 10px #3ad0ff18}
+  .card button:disabled{opacity:.55; cursor:not-allowed; box-shadow:none}
+  .pill{display:inline-flex; align-items:center; gap:6px; padding:3px 8px; border-radius:999px; border:1px solid var(--line);
+    font-size:12px; color:var(--muted);}
+  .tag{
+    display:inline-flex; align-items:center; padding:3px 8px; border-radius:999px; border:1px solid var(--line);
+    font-size:12px; color:var(--muted); white-space:nowrap;
+  }
+  .tag.bad{border-color: rgba(255,107,107,.45); color: var(--bad); background: rgba(255,107,107,.08);}
+  .tag.good{border-color: rgba(72,255,181,.35); color: var(--good); background: rgba(72,255,181,.08);}
+  .tag.warn{border-color: rgba(255,210,122,.35); color: var(--warn); background: rgba(255,210,122,.08);}
+  .log{font-size:12px; line-height:1.35; color:var(--muted); max-height:180px; overflow:auto;
+    border-top:1px solid var(--line); padding-top:10px; margin-top:10px;}
+  .hint{
+    position:absolute; left:12px; bottom:12px;
+    padding:8px 10px; border-radius:12px; border:1px solid var(--line); background:#061a2ad9;
+    font-size:12px; color:var(--muted); pointer-events:none;
+    z-index: 10; /* keep above canvas */
+  }
+  .toast{
+    position:absolute; right:12px; bottom:12px; display:flex; flex-direction:column; gap:8px; pointer-events:none;
+    z-index: 10; /* keep above canvas */
+  }
+  .toast .t{
+    padding:8px 10px; border-radius:12px; border:1px solid var(--line);
+    background:#061a2ad9; font-size:12px; color:var(--ink); box-shadow:0 0 20px #00b7ff12; max-width:360px;
+  }
+  .small{font-size:12px; color:var(--muted)}
+  .kpi{display:grid; grid-template-columns:1fr 1fr; gap:8px;}
+  .kpi .box{border:1px solid var(--line); border-radius:12px; padding:10px; background:#061a2a;}
+  .kpi .box .k{font-size:12px; color:var(--muted)}
+  .kpi .box .v{font-size:16px; font-weight:800; margin-top:4px}
+  .grid2{display:grid; grid-template-columns:1fr 1fr; gap:8px;}
+  .mono{font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="stage" id="stage">
+    <canvas id="c"></canvas>
+
+    <div class="hud">
+      <div class="chip">
+        <div>
+          <div class="k">货币</div>
+          <div class="v" id="money">0</div>
+        </div>
+        <div style="width:1px;background:var(--line); margin:0 4px;"></div>
+        <div>
+          <div class="k">副产品（自动收集）</div>
+          <div class="v"><span id="byprod">0</span></div>
+        </div>
+      </div>
+
+      <div class="chip" style="gap:8px">
+        <button id="sell" type="button">出售副产品</button>
+        <button id="save" type="button">保存</button>
+        <button id="load" type="button">读取</button>
+        <button id="reset" type="button" title="清档">重置</button>
+        <button id="audio" type="button">BGM：关</button>
+      </div>
+    </div>
+
+    <div class="hint">互动：点鱼=吐泡泡｜拖拽鱼摆放（只在画布生效）｜品质越高动画越华丽｜24h求偶1h配对后20%出生</div>
+    <div class="toast" id="toast"></div>
+  </div>
+
+  <div class="side">
+    <div class="tabs">
+      <div class="tab active" data-tab="shop">商店</div>
+      <div class="tab" data-tab="tank">鱼缸</div>
+      <div class="tab" data-tab="warehouse">仓库/合成</div>
+      <div class="tab" data-tab="codex">图鉴</div>
+    </div>
+    <div class="panel" id="panel"></div>
+  </div>
+</div>
+
+<script>
+(() => {
+  const $ = sel => document.querySelector(sel);
+  const fmt = n => {
+    if (n < 1e4) return Math.floor(n).toString();
+    const u=["","K","M","B","T"]; let i=0,x=n;
+    while(x>=1000 && i<u.length-1){x/=1000;i++}
+    return (x>=100?x.toFixed(0):x>=10?x.toFixed(1):x.toFixed(2))+u[i];
+  };
+  const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+  const rand=(a=1,b=0)=>Math.random()*(a-b)+b;
+  const pick = arr => arr[(Math.random()*arr.length)|0];
+  const now = () => performance.now();
+
+  // ---- Rules
+  const MAX_TANK = 20;
+  const TIME_SCALE = 60; // set 1 for real-time
+  const HOUR = 3600;
+  const COURTSHIP_INTERVAL = 24 * HOUR;
+  const COURTSHIP_DURATION = 1 * HOUR;
+  const BREED_SUCCESS = 0.20;
+
+  // Economy
+  const LOWEST_FISH_PRICE = 100;
+  const BYPRODUCT_VALUE = 1;
+  const TARGET_BYPRODUCT_30MIN = LOWEST_FISH_PRICE / BYPRODUCT_VALUE;
+  const BYPRODUCT_PER_SEC_PER_FISH = TARGET_BYPRODUCT_30MIN / (30*60*MAX_TANK);
+
+  // ---- State
+  const state = {
+    ver: 3,
+    money: 150,
+    byproduct: 0,
+    byproductValue: BYPRODUCT_VALUE,
+    tank: { capacity: MAX_TANK },
+    fishTank: [],
+    fishWarehouse: [],
+    codex: { discovered: {}, total: 0 },
+    log: [],
+    bubbles: [],
+  };
+
+  // ---- Content
+  const SPECIES = ["蓝鳞","珊瑚","深渊","机械"];
+  const TRAITS = [
+    {id:"发光纹路", w: 1.0},
+    {id:"长尾",   w: 1.0},
+    {id:"斑点",   w: 1.0},
+    {id:"晶化鳍", w: 0.8},
+    {id:"铁锈边", w: 0.7},
+    {id:"彩虹偏移", w: 0.6},
+  ];
+  const MUTATIONS = [
+    {id:"黄色方形海绵体", w:0.18, desc:"不太像鱼，但它在水里很快乐。"},
+    {id:"宇航帽松鼠", w:0.14, desc:"头盔里全是气泡。"},
+    {id:"克苏鲁幼体", w:0.08, desc:"你看见它在看你。"},
+    {id:"玻璃躯壳", w:0.12, desc:"像容器一样映出深海的光。"},
+  ];
+  function weightedPick(items){
+    const sum = items.reduce((s,it)=>s+(it.w||1),0);
+    let r=Math.random()*sum;
+    for(const it of items){ r-= (it.w||1); if(r<=0) return it; }
+    return items[items.length-1];
+  }
+
+  const GRADE = {
+    1:{name:"Ⅰ", hue:200, lux:0.10, price: LOWEST_FISH_PRICE},
+    2:{name:"Ⅱ", hue:205, lux:0.25, price: Math.floor(LOWEST_FISH_PRICE*3.2)},
+    3:{name:"Ⅲ", hue:210, lux:0.45, price: Math.floor(LOWEST_FISH_PRICE*10)},
+    4:{name:"Ⅳ", hue:220, lux:0.70, price: Math.floor(LOWEST_FISH_PRICE*32)},
+    5:{name:"Ⅴ", hue:235, lux:1.00, price: Math.floor(LOWEST_FISH_PRICE*100)},
+  };
+  const gradeName = g => `品质${g}${GRADE[g]?.name||""}`;
+  const gradePrice = g => GRADE[g]?.price || LOWEST_FISH_PRICE;
+
+  // ---- Canvas
+  const canvas = $("#c");
+  const ctx = canvas.getContext("2d");
+  const stage = $("#stage");
+  let W=0,H=0,DPR=1;
+  let stageRect = {width:0,height:0,left:0,top:0};
+  function resize(){
+    stageRect = canvas.getBoundingClientRect();
+    DPR = Math.max(1, Math.min(2, window.devicePixelRatio||1));
+    W = Math.floor(stageRect.width * DPR);
+    H = Math.floor(stageRect.height * DPR);
+    canvas.width=W; canvas.height=H;
+  }
+  window.addEventListener("resize", resize);
+
+  // ---- UI
+  function toast(s){
+    const el=document.createElement("div");
+    el.className="t";
+    el.textContent=s;
+    $("#toast").appendChild(el);
+    setTimeout(()=>{ el.style.transition="opacity .5s"; el.style.opacity="0"; }, 1400);
+    setTimeout(()=>el.remove(), 2000);
+  }
+  function addLog(s){
+    state.log.unshift(`[${new Date().toLocaleTimeString()}] ${s}`);
+    state.log = state.log.slice(0,80);
+    renderPanel();
+  }
+  function updateHUD(){
+    $("#money").textContent = fmt(state.money);
+    $("#byprod").textContent = fmt(state.byproduct);
+  }
+
+  // ---- Codex
+  function fishKey(f){
+    const tr = (f.traits||[]).slice().sort().join("|");
+    const mut = f.mutation?.id || "";
+    return `${f.species}::G${f.grade}::${tr}::${mut}`;
+  }
+  function discover(f){
+    const key = fishKey(f);
+    if(!state.codex.discovered[key]){
+      state.codex.discovered[key]=true;
+      state.codex.total = Object.keys(state.codex.discovered).length;
+      toast(`图鉴解锁：${f.species}（${gradeName(f.grade)}）`);
+    }
+  }
+
+  // ---- Fish factory
+  function newFish({species=null, grade=1, traits=null, mutation=null, from=null}={}){
+    const sp = species || pick(SPECIES);
+    const tr = traits ?? (() => {
+      const out=[];
+      if(Math.random()<0.25) out.push(weightedPick(TRAITS).id);
+      if(Math.random()<0.12) out.push(weightedPick(TRAITS).id);
+      return [...new Set(out)];
+    })();
+    const mut = mutation ?? (Math.random()<0.05 ? weightedPick(MUTATIONS) : null);
+
+    const f = {
+      id: (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2)),
+      species: sp,
+      grade,
+      traits: tr,
+      mutation: mut ? {...mut} : null,
+
+      size: rand(18,12),
+      x: 0, y: 0, vx: rand(55,-55), vy: rand(18,-18),
+      wiggle: 0,
+
+      drag: {active:false, offX:0, offY:0, moved:false},
+      anim: { burst:0, sparkleT: rand(10,0), crownPulse: rand(10,0) },
+
+      adult: true,
+      timeInTank: 0,
+      courting: false,
+      courtingLeft: 0,
+      pairedWith: null,
+      pairedThisCycle: false,
+      from
+    };
+
+    if(stageRect.width===0) resize();
+    const w = stageRect.width, h = stageRect.height;
+    const marginX=60, top=90, bottom=h-70;
+    f.x = clamp(rand(w - marginX, marginX), marginX, w-marginX);
+    f.y = clamp(rand(bottom, top), top, bottom);
+
+    discover(f);
+    return f;
+  }
+
+  // ---- VFX bubbles
+  function spawnBubbles(x,y, count, grade=1){
+    const c = Math.max(2, count|0);
+    for(let i=0;i<c;i++){
+      const spd = 30 + 14*grade;
+      state.bubbles.push({
+        x: x + rand(12,-12),
+        y: y + rand(8,-8),
+        vx: rand(12,-12),
+        vy: rand(-spd, -(spd+18)),
+        r: rand(10,6) * (0.9 + 0.08*grade),
+        a: 0.85,
+        t: 0,
+        hue: 190 + 8*grade + rand(10,-10)
+      });
+    }
+  }
+
+  // ---- Shop
+  function buyFish(){
+    const cost = gradePrice(1);
+    if(state.money < cost){ toast("货币不足"); return; }
+    if(state.fishTank.length >= state.tank.capacity){ toast("鱼缸已满：先收进仓库"); return; }
+    state.money -= cost;
+    const f = newFish({grade:1, from:"shop"});
+    state.fishTank.push(f);
+    addLog(`购买：${f.species}（${gradeName(f.grade)}） -${cost}`);
+    updateHUD();
+    renderPanel();
+  }
+
+  // ---- Warehouse management
+  function moveToWarehouse(id){
+    const idx = state.fishTank.findIndex(f=>f.id===id);
+    if(idx<0) return;
+    const f = state.fishTank.splice(idx,1)[0];
+    f.timeInTank = 0;
+    f.courting=false; f.courtingLeft=0; f.pairedWith=null; f.pairedThisCycle=false;
+    f.drag.active=false;
+    state.fishWarehouse.push(f);
+    addLog(`收纳入仓库：${f.species}（${gradeName(f.grade)}）`);
+    renderPanel();
+  }
+  function moveToTank(id){
+    if(state.fishTank.length >= state.tank.capacity){ toast("鱼缸已满"); return; }
+    const idx = state.fishWarehouse.findIndex(f=>f.id===id);
+    if(idx<0) return;
+    const f = state.fishWarehouse.splice(idx,1)[0];
+
+    if(stageRect.width===0) resize();
+    const w = stageRect.width, h = stageRect.height;
+    const marginX=60, top=90, bottom=h-70;
+    f.x = clamp(rand(w - marginX, marginX), marginX, w-marginX);
+    f.y = clamp(rand(bottom, top), top, bottom);
+    f.vx = rand(55,-55); f.vy = rand(18,-18);
+    f.wiggle=0;
+    f.drag.active=false;
+
+    f.timeInTank = 0;
+    f.courting=false; f.courtingLeft=0; f.pairedWith=null; f.pairedThisCycle=false;
+
+    state.fishTank.push(f);
+    addLog(`放回鱼缸：${f.species}（${gradeName(f.grade)}）`);
+    renderPanel();
+  }
+
+  // ---- Synthesis
+  function synthesize(grade){
+    const g = grade|0;
+    if(g<1 || g>=5){ toast("该品质无法合成"); return; }
+    const poolIdx = [];
+    for(let i=0;i<state.fishWarehouse.length;i++){
+      if(state.fishWarehouse[i].grade===g) poolIdx.push(i);
+    }
+    if(poolIdx.length < 10){ toast(`仓库中品质${g}数量不足（需10）`); return; }
+    for(let k=0;k<10;k++){
+      const i = poolIdx[poolIdx.length-1-k];
+      state.fishWarehouse.splice(i,1);
+    }
+    const child = newFish({ grade: g+1, from: `synth(G${g})` });
+    state.fishWarehouse.push(child);
+    addLog(`合成成功：10×${gradeName(g)} → 1×${gradeName(g+1)}（随机）`);
+    toast(`获得：${child.species}（${gradeName(child.grade)}）`);
+    renderPanel();
+  }
+
+  // ---- Byproduct
+  function sellByproduct(){
+    // FIX: ensure button works and feedback ok even if fractional
+    const amt = Math.floor(state.byproduct);
+    if(amt<=0){ toast("没有可出售的副产品"); return; }
+    const gain = amt * state.byproductValue;
+    state.money += gain;
+    state.byproduct -= amt;
+    addLog(`出售副产品 ${amt}，获得货币 +${gain}`);
+    updateHUD();
+    renderPanel();
+  }
+
+  // ---- Courtship & breeding
+  function updateCourtship(dtScaled){
+    for(const f of state.fishTank){
+      if(!f.adult) continue;
+      f.timeInTank += dtScaled;
+
+      if(f.courting){
+        f.courtingLeft -= dtScaled;
+        if(f.courtingLeft <= 0){
+          f.courting=false; f.courtingLeft=0;
+          f.pairedWith=null; f.pairedThisCycle=false;
+          f.timeInTank = 0;
+        }
+        continue;
+      }
+      if(f.timeInTank >= COURTSHIP_INTERVAL){
+        f.courting = true;
+        f.courtingLeft = COURTSHIP_DURATION;
+        f.pairedWith = null;
+        f.pairedThisCycle = false;
+      }
+    }
+
+    const singles = state.fishTank.filter(f => f.adult && f.courting && !f.pairedWith && !f.pairedThisCycle);
+    for(let i=singles.length-1;i>0;i--){
+      const j = (Math.random()*(i+1))|0;
+      [singles[i],singles[j]]=[singles[j],singles[i]];
+    }
+
+    for(let i=0;i+1<singles.length;i+=2){
+      const a = singles[i], b = singles[i+1];
+      a.pairedWith = b.id; b.pairedWith = a.id;
+
+      const success = Math.random() < BREED_SUCCESS;
+      if(success){
+        const baseG = Math.round((a.grade+b.grade)/2);
+        const bonus = Math.random()<0.12 ? 1 : 0;
+        const childGrade = clamp(baseG+bonus, 1, 5);
+
+        const traitPool = [...new Set([...(a.traits||[]), ...(b.traits||[])])];
+        const childTraits = traitPool.filter(()=>Math.random()<0.55);
+        if(Math.random()<0.18) childTraits.push(weightedPick(TRAITS).id);
+        const uniqTraits = [...new Set(childTraits)];
+
+        const mutChance = 0.03 + 0.02*(childGrade-1);
+        const mut = (Math.random()<mutChance) ? weightedPick(MUTATIONS) : null;
+
+        const child = newFish({
+          grade: childGrade,
+          species: Math.random()<0.5 ? a.species : b.species,
+          traits: uniqTraits,
+          mutation: mut,
+          from: `breed(${a.grade}+${b.grade})`
+        });
+
+        if(state.fishTank.length < state.tank.capacity){
+          state.fishTank.push(child);
+          toast(`繁殖成功：后代（${gradeName(child.grade)}）进入鱼缸`);
+        }else{
+          state.fishWarehouse.push(child);
+          toast(`繁殖成功：后代（${gradeName(child.grade)}）进入仓库（鱼缸满）`);
+        }
+        addLog(`繁殖成功：${a.species}×${b.species} → 后代（${gradeName(child.grade)}）`);
+      }else{
+        addLog(`繁殖失败：${a.species}×${b.species}（本周期无后代）`);
+      }
+
+      for(const f of [a,b]){
+        f.courting=false; f.courtingLeft=0;
+        f.pairedWith=null; f.pairedThisCycle=true;
+        f.timeInTank = 0;
+      }
+    }
+  }
+
+  // ---- Rendering
+  function hsl(h,s,l,a=1){ return `hsla(${h},${s}%,${l}%,${a})`; }
+
+  function drawBackground(t){
+    ctx.clearRect(0,0,W,H);
+    ctx.save();
+    ctx.globalAlpha=0.22;
+    for(let i=0;i<6;i++){
+      const x = (i/6)*W + (Math.sin(t*0.0003+i)*0.06+0.08)*W;
+      ctx.fillStyle = `rgba(120,220,255,${0.05+ i*0.01})`;
+      ctx.beginPath();
+      ctx.moveTo(x,0);
+      ctx.lineTo(x+W*0.22,H);
+      ctx.lineTo(x+W*0.34,H);
+      ctx.lineTo(x+W*0.1,0);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
+
+    const g=ctx.createRadialGradient(W*0.5,H*0.45, Math.min(W,H)*0.1, W*0.5,H*0.45, Math.max(W,H)*0.7);
+    g.addColorStop(0,"rgba(0,0,0,0)");
+    g.addColorStop(1,"rgba(0,0,0,0.55)");
+    ctx.fillStyle=g;
+    ctx.fillRect(0,0,W,H);
+  }
+
+  function drawBubbles(){
+    for(const b of state.bubbles){
+      const x=b.x*DPR, y=b.y*DPR, r=b.r*DPR;
+      ctx.save();
+      ctx.globalAlpha = b.a;
+      ctx.strokeStyle = hsl(b.hue, 80, 80, 0.55);
+      ctx.lineWidth = 1.2*DPR;
+      ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.stroke();
+      ctx.fillStyle = hsl(b.hue, 85, 70, 0.12);
+      ctx.beginPath(); ctx.arc(x-r*0.25,y-r*0.25,r*0.22,0,Math.PI*2); ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  function drawFish(f, t){
+    const x=f.x*DPR, y=f.y*DPR;
+    const baseHue = GRADE[f.grade].hue;
+    const lux = GRADE[f.grade].lux;
+    const s=(f.size*(0.95+0.08*f.grade))*DPR;
+    const dir = f.vx>=0 ? 1 : -1;
+
+    const pulse = 1 + Math.sin(t*0.002 + f.anim.crownPulse)*0.08*lux;
+    ctx.save();
+    ctx.globalAlpha = 0.06 + 0.12*lux;
+    ctx.fillStyle = hsl(baseHue, 90, 65, 1);
+    ctx.beginPath();
+    ctx.ellipse(x,y, s*(1.55+lux*0.65)*pulse, s*(1.05+lux*0.45)*pulse, 0,0,Math.PI*2);
+    ctx.fill();
+    ctx.restore();
+
+    ctx.save();
+    ctx.translate(x,y);
+    ctx.scale(dir,1);
+
+    const flutter = (f.grade>=4) ? Math.sin(t*0.01 + f.anim.sparkleT)*0.12 : 0;
+    ctx.rotate(Math.sin(f.wiggle)*0.05 + flutter);
+
+    const grad = ctx.createLinearGradient(-s*1.2,0,s*1.4,0);
+    grad.addColorStop(0, hsl(baseHue, 85, 55, 1));
+    grad.addColorStop(1, hsl(baseHue+20, 90, 75, 0.35+0.35*lux));
+    ctx.fillStyle=grad;
+    ctx.strokeStyle=hsl(baseHue+10, 90, 85, 0.6);
+    ctx.lineWidth=(1.2+lux*1.2)*DPR;
+
+    ctx.beginPath();
+    ctx.ellipse(0,0, s*1.25, s*0.85, 0,0,Math.PI*2);
+    ctx.fill(); ctx.stroke();
+
+    const tail = 0.85 + lux*0.75;
+    const tailWig = Math.sin(t*0.01 + f.wiggle)*0.15*(0.4+lux);
+    ctx.save();
+    ctx.rotate(tailWig);
+    ctx.beginPath();
+    ctx.moveTo(-s*1.15,0);
+    ctx.lineTo(-s*(1.9*tail), -s*(0.7+0.25*lux));
+    ctx.lineTo(-s*(1.65*tail), 0);
+    ctx.lineTo(-s*(1.9*tail), s*(0.7+0.25*lux));
+    ctx.closePath();
+    ctx.fill(); ctx.stroke();
+    ctx.restore();
+
+    if(f.grade>=3){
+      ctx.save();
+      ctx.globalAlpha = 0.25 + 0.25*lux;
+      ctx.strokeStyle = hsl(baseHue+35, 95, 88, 0.8);
+      ctx.lineWidth = (0.8+lux*1.2)*DPR;
+      for(let i=0;i<3+(f.grade-3);i++){
+        ctx.beginPath();
+        ctx.moveTo(-s*0.4, -s*0.35 + i*s*0.25);
+        ctx.quadraticCurveTo(s*0.2, -s*0.15 + i*s*0.22, s*0.7, -s*0.28 + i*s*0.18);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    if(f.grade>=4){
+      const n = (f.grade===4)?3:5;
+      ctx.save();
+      ctx.globalAlpha = 0.55;
+      for(let i=0;i<n;i++){
+        const ang = t*0.002 + f.anim.sparkleT + i*(Math.PI*2/n);
+        const rr = s*(1.25 + 0.25*Math.sin(t*0.004+ i));
+        const px = Math.cos(ang)*rr*0.55;
+        const py = Math.sin(ang)*rr*0.35 - s*0.15;
+        ctx.fillStyle = hsl(baseHue+60+i*10, 100, 85, 0.85);
+        ctx.beginPath();
+        ctx.arc(px,py, (1.2+lux*1.8)*DPR,0,Math.PI*2);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+
+    if(f.grade===5){
+      const cp = 1 + Math.sin(t*0.006 + f.anim.crownPulse)*0.22;
+      ctx.save();
+      ctx.globalAlpha=0.75;
+      ctx.fillStyle=hsl(baseHue+65, 100, 86, 0.95);
+      ctx.beginPath();
+      ctx.moveTo(s*0.28,-s*(0.58*cp));
+      ctx.lineTo(s*0.50,-s*(0.86*cp));
+      ctx.lineTo(s*0.72,-s*(0.58*cp));
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+
+    ctx.fillStyle="rgba(5,10,16,0.9)";
+    ctx.beginPath();
+    ctx.arc(s*0.55,-s*0.12, s*0.12, 0, Math.PI*2);
+    ctx.fill();
+    ctx.fillStyle=hsl(baseHue+30, 90, 90, 0.95);
+    ctx.beginPath();
+    ctx.arc(s*0.59,-s*0.16, s*0.04, 0, Math.PI*2);
+    ctx.fill();
+
+    if(f.courting){
+      ctx.save();
+      ctx.globalAlpha=0.35;
+      ctx.strokeStyle = hsl(330, 90, 70, 0.9);
+      ctx.lineWidth = 1.3*DPR;
+      ctx.beginPath();
+      ctx.arc(s*0.2, -s*0.75, s*0.28, 0, Math.PI*2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    if(f.anim.burst>0){
+      const k = f.anim.burst;
+      ctx.save();
+      ctx.globalAlpha = 0.35*k;
+      ctx.strokeStyle = hsl(baseHue+40, 95, 85, 0.9);
+      ctx.lineWidth = (1.0+2.2*lux)*DPR;
+      ctx.beginPath();
+      ctx.arc(0,0, s*(1.5 + (1-k)*1.5), 0, Math.PI*2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    ctx.restore();
+  }
+
+  // ---- Interaction: bind to canvas only (FIX)
+  let pointer = {down:false, id:null, fishId:null};
+
+  function screenToStage(e){
+    const r = canvas.getBoundingClientRect();
+    return { x: e.clientX - r.left, y: e.clientY - r.top };
+  }
+  function fishHitTest(px,py){
+    for(let i=state.fishTank.length-1;i>=0;i--){
+      const f = state.fishTank[i];
+      const s = f.size*(0.95+0.08*f.grade);
+      const dx = px - f.x;
+      const dy = py - f.y;
+      if((dx*dx)/(s*s*1.7) + (dy*dy)/(s*s*1.2) <= 1.0) return f;
+    }
+    return null;
+  }
+
+  canvas.addEventListener("pointerdown", (e)=>{
+    const p = screenToStage(e);
+    pointer.down=true; pointer.id=e.pointerId;
+
+    const f = fishHitTest(p.x,p.y);
+    if(f){
+      pointer.fishId = f.id;
+      f.drag.active = true;
+      f.drag.offX = p.x - f.x;
+      f.drag.offY = p.y - f.y;
+      f.drag.moved = false;
+
+      // capture only when interacting with fish (FIX)
+      canvas.setPointerCapture?.(e.pointerId);
+
+      // bring to front
+      const idx = state.fishTank.findIndex(x=>x.id===f.id);
+      if(idx>=0){ state.fishTank.splice(idx,1); state.fishTank.push(f); }
+    }else{
+      pointer.fishId = null;
+    }
+  });
+
+  canvas.addEventListener("pointermove", (e)=>{
+    if(!pointer.down || pointer.id!==e.pointerId) return;
+    if(!pointer.fishId) return;
+    const f = state.fishTank.find(x=>x.id===pointer.fishId);
+    if(!f || !f.drag.active) return;
+
+    const p = screenToStage(e);
+    const w=stageRect.width, h=stageRect.height;
+    const marginX=40, top=90, bottom=h-50;
+
+    const nx = clamp(p.x - f.drag.offX, marginX, w-marginX);
+    const ny = clamp(p.y - f.drag.offY, top, bottom);
+    const dx = nx - f.x, dy = ny - f.y;
+    f.x = nx; f.y = ny;
+    f.vx = clamp(dx*12, -120, 120);
+    f.vy = clamp(dy*12, -80, 80);
+    if(Math.abs(dx)+Math.abs(dy) > 0.8) f.drag.moved = true;
+  });
+
+  function endPointer(e){
+    if(pointer.id!==e.pointerId) return;
+    pointer.down=false;
+
+    const fid = pointer.fishId;
+    pointer.fishId=null;
+
+    if(fid){
+      const f = state.fishTank.find(x=>x.id===fid);
+      if(f){
+        if(!f.drag.moved){
+          const count = 3 + f.grade*2 + (Math.random()*3|0);
+          spawnBubbles(f.x, f.y, count, f.grade);
+          f.anim.burst = 1;
+        }
+        f.drag.active=false;
+      }
+    }
+    // release capture safety (FIX)
+    try{ canvas.releasePointerCapture?.(e.pointerId); }catch{}
+  }
+  canvas.addEventListener("pointerup", endPointer);
+  canvas.addEventListener("pointercancel", (e)=>{
+    pointer.down=false; pointer.fishId=null;
+    for(const f of state.fishTank) f.drag.active=false;
+    try{ canvas.releasePointerCapture?.(e.pointerId); }catch{}
+  });
+
+  // ---- Tabs UI
+  const panel = $("#panel");
+  let currentTab="shop";
+  function statusTag(text, cls="good"){ return `<span class="tag ${cls}">${text}</span>`; }
+
+  function renderShop(){
+    const cost = gradePrice(1);
+    const moneyOk = state.money >= cost;
+    const capOk = state.fishTank.length < state.tank.capacity;
+    const can = moneyOk && capOk;
+
+    panel.innerHTML = `
+      <div class="section">
+        <h3>概览</h3>
+        <div class="kpi">
+          <div class="box"><div class="k">鱼缸容量</div><div class="v">${state.fishTank.length} / ${state.tank.capacity}</div></div>
+          <div class="box"><div class="k">仓库数量</div><div class="v">${state.fishWarehouse.length}</div></div>
+          <div class="box"><div class="k">副产品单价</div><div class="v">${state.byproductValue}</div></div>
+          <div class="box"><div class="k">时间倍率</div><div class="v mono">x${TIME_SCALE}</div></div>
+        </div>
+      </div>
+
+      <div class="section">
+        <h3>鱼苗商店</h3>
+        <div class="card">
+          <div class="name">
+            <span>随机鱼苗（${gradeName(1)}）</span>
+            ${!moneyOk ? statusTag("货币不足","bad") : !capOk ? statusTag("容量不足","bad") : statusTag("可购买","good")}
+          </div>
+          <div class="desc">购买后进入鱼缸。点击鱼吐泡泡（装饰），可拖拽摆放。</div>
+          <div class="meta">
+            <span class="pill">价格 ${cost}</span>
+            <span class="pill">容量上限 ${MAX_TANK}</span>
+          </div>
+          <button ${can?"":"disabled"} onclick="window.__buyFish()">购买鱼苗</button>
+        </div>
+      </div>
+
+      <div class="section">
+        <h3>日志</h3>
+        <div class="log">${state.log.map(x=>`<div>${x}</div>`).join("") || "<div>（暂无）</div>"}</div>
+      </div>
+    `;
+  }
+
+  function renderTank(){
+    const courting = state.fishTank.filter(f=>f.courting).length;
+    panel.innerHTML = `
+      <div class="section">
+        <h3>鱼缸（点击/拖拽互动）</h3>
+        <div class="small">求偶中 <b>${courting}</b> / ${state.fishTank.length}</div>
+      </div>
+      <div class="section">
+        <h3>个体</h3>
+        <div class="row">
+          ${state.fishTank.slice().reverse().map(f=>{
+            const until = f.courting ? `求偶剩余 ${Math.ceil(f.courtingLeft/3600)}h`
+              : `距求偶 ${Math.max(0, Math.ceil((COURTSHIP_INTERVAL - f.timeInTank)/3600))}h`;
+            const mut = f.mutation?.id ? `｜突变：<span class="tag warn">${f.mutation.id}</span>`:"";
+            return `<div class="card">
+              <div class="name">
+                <span>${f.species}（${gradeName(f.grade)}）</span>
+                ${f.courting ? statusTag("求偶中","warn") : statusTag("单身","good")}
+              </div>
+              <div class="desc">特征：${f.traits?.length?f.traits.join("、"):"无"}${mut}</div>
+              <div class="meta">
+                <span class="pill">${until}</span>
+                <span class="pill">售价参考 ${gradePrice(f.grade)}</span>
+              </div>
+              <button onclick="window.__toWarehouse('${f.id}')">收进仓库</button>
+            </div>`;
+          }).join("") || `<div class="small">（鱼缸里还没有鱼）</div>`}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderWarehouse(){
+    const cnt = {1:0,2:0,3:0,4:0,5:0};
+    for(const f of state.fishWarehouse) cnt[f.grade]++;
+
+    panel.innerHTML = `
+      <div class="section">
+        <h3>仓库/合成</h3>
+        <div class="small">仓库内同品质鱼：10 合 1 升级（随机更高一档）。</div>
+        <div class="grid2" style="margin-top:8px">
+          ${[1,2,3,4,5].map(g=>`
+            <div class="card">
+              <div class="name"><span>${gradeName(g)}</span>${statusTag(`数量 ${cnt[g]}`,"good")}</div>
+              <div class="desc">10 只 ${gradeName(g)} 可合成 1 只随机 ${gradeName(Math.min(5,g+1))}。</div>
+              <button ${g>=5 || cnt[g]<10 ? "disabled":""} onclick="window.__synth(${g})">
+                ${g>=5 ? "最高品质不可合成" : (cnt[g]<10 ? "数量不足（需10）" : `合成 → ${gradeName(g+1)}`)}
+              </button>
+            </div>
+          `).join("")}
+        </div>
+      </div>
+
+      <div class="section">
+        <h3>仓库鱼列表</h3>
+        <div class="row">
+          ${state.fishWarehouse.slice().reverse().map(f=>{
+            const canBack = state.fishTank.length < state.tank.capacity;
+            const mut = f.mutation?.id ? `｜突变：<span class="tag warn">${f.mutation.id}</span>`:"";
+            return `<div class="card">
+              <div class="name"><span>${f.species}（${gradeName(f.grade)}）</span>${statusTag("仓库","good")}</div>
+              <div class="desc">特征：${f.traits?.length?f.traits.join("、"):"无"}${mut}</div>
+              <div class="meta"><span class="pill">售价参考 ${gradePrice(f.grade)}</span></div>
+              <button ${canBack?"":"disabled"} onclick="window.__toTank('${f.id}')">${canBack?"放回鱼缸":"鱼缸已满"}</button>
+            </div>`;
+          }).join("") || `<div class="small">（仓库为空）</div>`}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderCodex(){
+    const keys = Object.keys(state.codex.discovered);
+    panel.innerHTML = `
+      <div class="section">
+        <h3>图鉴</h3>
+        <div class="small">条目按“物种×品质×特征×突变”组合记录。</div>
+      </div>
+      <div class="section">
+        <h3>已发现：${keys.length}</h3>
+        <div class="row">
+          ${keys.length? keys.slice(0,240).map(k=>{
+            const [sp,g,tr,mut] = k.split("::");
+            const title = `${sp}（${g.replace("G","品质")}）`;
+            const subtitle = `特征：${tr||"无"}${mut?`｜突变：${mut}`:""}`;
+            return `<div class="card">
+              <div class="name"><span>${title}</span>${statusTag("已记录","good")}</div>
+              <div class="desc">${subtitle}</div>
+              <div class="meta"><span class="pill">条目</span><span class="pill">${sp}</span></div>
+            </div>`;
+          }).join("") : `<div class="small">（尚未发现条目）</div>`}
+        </div>
+        ${keys.length>240?`<div class="small">仅展示前 240 条（总计 ${keys.length}）。</div>`:""}
+      </div>
+    `;
+  }
+
+  function renderPanel(){
+    if(currentTab==="shop") renderShop();
+    if(currentTab==="tank") renderTank();
+    if(currentTab==="warehouse") renderWarehouse();
+    if(currentTab==="codex") renderCodex();
+  }
+
+  // ---- Bindings
+  window.__buyFish = buyFish;
+  window.__toWarehouse = moveToWarehouse;
+  window.__toTank = moveToTank;
+  window.__synth = synthesize;
+
+  // FIX: sell button now reliably clickable (HUD is on top; canvas no longer captures outside)
+  $("#sell").addEventListener("click", sellByproduct);
+
+  // Save/load
+  const SAVE_KEY="aquarium_idle_save_v3_fix";
+  function save(){
+    localStorage.setItem(SAVE_KEY, JSON.stringify({
+      money: state.money,
+      byproduct: state.byproduct,
+      fishTank: state.fishTank,
+      fishWarehouse: state.fishWarehouse,
+      codex: state.codex,
+      log: state.log,
+    }));
+    toast("已保存");
+  }
+  function load(){
+    const raw = localStorage.getItem(SAVE_KEY);
+    if(!raw){ toast("没有存档"); return; }
+    try{
+      const data = JSON.parse(raw);
+      state.money = data.money ?? state.money;
+      state.byproduct = data.byproduct ?? state.byproduct;
+      state.codex = data.codex ?? state.codex;
+      state.log = data.log ?? state.log;
+
+      const rebuild = (f) => {
+        const nf = newFish({species:f.species, grade:f.grade, traits:f.traits, mutation:f.mutation, from:f.from});
+        Object.assign(nf, f);
+        nf.drag = nf.drag || {active:false, offX:0, offY:0, moved:false};
+        nf.anim = nf.anim || {burst:0, sparkleT: rand(10,0), crownPulse: rand(10,0)};
+        return nf;
+      };
+      state.fishTank = (data.fishTank||[]).map(rebuild);
+      state.fishWarehouse = (data.fishWarehouse||[]).map(rebuild);
+
+      updateHUD();
+      renderPanel();
+      toast("已读取");
+    }catch(e){
+      console.error(e);
+      toast("读取失败：存档损坏");
+    }
+  }
+  function reset(){
+    localStorage.removeItem(SAVE_KEY);
+    location.reload();
+  }
+  $("#save").addEventListener("click", save);
+  $("#load").addEventListener("click", load);
+  $("#reset").addEventListener("click", reset);
+
+  // Tabs
+  document.querySelectorAll(".tab").forEach(t=>{
+    t.addEventListener("click", ()=>{
+      document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));
+      t.classList.add("active");
+      currentTab = t.dataset.tab;
+      renderPanel();
+    });
+  });
+
+  // ---- Audio (procedural)
+  let audioOn=false, audioCtx=null, master=null, seqTimer=null, seqStep=0;
+  function startAudio(){
+    if(audioOn) return;
+    audioOn=true;
+    $("#audio").textContent="BGM：开";
+    if(!audioCtx){
+      audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+      master = audioCtx.createGain();
+      master.gain.value = 0.10;
+      master.connect(audioCtx.destination);
+    }
+    if(audioCtx.state==="suspended") audioCtx.resume();
+    const scale = [0,3,5,7,10];
+    const base = 48;
+    const playNote=(midi, dur, type="sine", det=0)=>{
+      const t0 = audioCtx.currentTime;
+      const o = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      const f = 440*Math.pow(2,(midi-69)/12);
+      o.type=type; o.frequency.value=f; o.detune.value=det;
+      g.gain.setValueAtTime(0.0001,t0);
+      g.gain.exponentialRampToValueAtTime(0.8,t0+0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001,t0+dur);
+      o.connect(g); g.connect(master);
+      o.start(t0); o.stop(t0+dur+0.02);
+    };
+    const tick=()=>{
+      const interval = 320;
+      const deg = scale[seqStep % scale.length];
+      const oct = (seqStep%10<5)?0:12;
+      const m = base + deg + oct + (Math.random()<0.12?12:0);
+      playNote(m, 0.20, "sine", rand(10,-10));
+      if(seqStep%4===0) playNote(base-12 + (seqStep%2?5:0), 0.55, "triangle", rand(4,-4));
+      if(Math.random()<0.24) playNote(base+24+pick(scale), 0.08, "sine", rand(16,-16));
+      seqStep++;
+      seqTimer=setTimeout(tick, interval);
+    };
+    tick();
+  }
+  function stopAudio(){
+    audioOn=false;
+    $("#audio").textContent="BGM：关";
+    if(seqTimer){ clearTimeout(seqTimer); seqTimer=null; }
+  }
+  $("#audio").addEventListener("click", ()=> audioOn?stopAudio():startAudio());
+
+  // ---- Game loop
+  let last = now();
+  let hudTimer=0;
+
+  function step(){
+    const t = now();
+    const dt = Math.min(0.05, (t-last)/1000);
+    last=t;
+
+    stageRect = canvas.getBoundingClientRect();
+    const dtScaled = dt * TIME_SCALE;
+
+    const w=stageRect.width, h=stageRect.height;
+    const marginX=40, top=90, bottom=h-50;
+
+    for(const f of state.fishTank){
+      if(!f.drag.active){
+        f.wiggle += dt*(2.5 + Math.abs(f.vx)*0.02);
+        f.x += f.vx*dt;
+        f.y += f.vy*dt;
+
+        if(f.x < marginX){ f.x=marginX; f.vx=Math.abs(f.vx); }
+        if(f.x > w-marginX){ f.x=w-marginX; f.vx=-Math.abs(f.vx); }
+        if(f.y < top){ f.y=top; f.vy=Math.abs(f.vy); }
+        if(f.y > bottom){ f.y=bottom; f.vy=-Math.abs(f.vy); }
+
+        if(Math.random()<0.02){
+          f.vx += rand(16,-16);
+          f.vy += rand(8,-8);
+          f.vx = clamp(f.vx, -80, 80);
+          f.vy = clamp(f.vy, -38, 38);
+        }
+      }else{
+        f.wiggle += dt*2.2;
+      }
+      if(f.anim.burst>0) f.anim.burst = Math.max(0, f.anim.burst - dt*2.2);
+      f.anim.sparkleT += dt*(0.6 + 0.3*f.grade);
+      f.anim.crownPulse += dt*(0.4 + 0.2*f.grade);
+    }
+
+    // bubbles update
+    for(const b of state.bubbles){
+      b.t += dt;
+      b.x += b.vx*dt;
+      b.y += b.vy*dt;
+      b.vy += 8*dt;
+      b.a = clamp(0.85 - b.t*0.35, 0, 0.85);
+      b.r *= (1.0 + dt*0.02);
+    }
+    state.bubbles = state.bubbles.filter(b=>b.a>0.02 && b.y>-40 && b.y<stageRect.height+60);
+
+    // byproduct auto-collect
+    let add = 0;
+    for(const f of state.fishTank){
+      const gradeBoost = 1.0 + (f.grade-1)*0.10;
+      add += BYPRODUCT_PER_SEC_PER_FISH * gradeBoost * dtScaled;
+    }
+    state.byproduct += add;
+
+    updateCourtship(dtScaled);
+
+    if(Math.random()<0.03 && state.fishTank.length){
+      const f = pick(state.fishTank);
+      spawnBubbles(f.x+rand(10,-10), f.y+rand(8,-8), 1, 1);
+    }
+
+    drawBackground(t);
+    drawBubbles();
+    for(const f of state.fishTank) drawFish(f, t);
+
+    hudTimer += dt;
+    if(hudTimer > 0.25){
+      hudTimer = 0;
+      updateHUD();
+      renderPanel();
+    }
+    requestAnimationFrame(step);
+  }
+
+  // ---- Init
+  function init(){
+    resize();
+    state.fishTank.push(newFish({grade:1, from:"starter"}));
+    state.fishTank.push(newFish({grade:1, from:"starter"}));
+    addLog("启动：出售按钮已修复（HUD 层级与事件捕获修正）。");
+    updateHUD();
+    renderPanel();
+    requestAnimationFrame(step);
+  }
+  init();
+})();
+</script>
+</body>
+</html>
