@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>深蓝水族箱：放置繁育图鉴（启动自检修复版）</title>
+<title>深蓝水族箱：放置繁育图鉴（修复：鱼尾/眼睛 + HUD + 仓库自动合成弹窗）</title>
 <style>
   :root{
     --bg0:#061424; --bg1:#08263a;
@@ -75,7 +75,7 @@
     width:100%; margin-top:10px; border:1px solid var(--line);
     background:#071c2d; color:var(--ink); padding:9px 10px; border-radius:10px; cursor:pointer;
   }
-  .card button:disabled{opacity:.55; cursor:not-allowed; box-shadow:none}
+  .card button:disabled{opacity:.55; cursor:not-allowed}
   .pill{display:inline-flex; align-items:center; gap:6px; padding:3px 8px; border-radius:999px; border:1px solid var(--line);
     font-size:12px; color:var(--muted);}
   .tag{
@@ -103,7 +103,33 @@
     background:#061a2ad9; font-size:12px; color:var(--ink); box-shadow:0 0 20px #00b7ff12;
     overflow-wrap:anywhere;
   }
-  .mono{font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;}
+
+  /* Synthesis modal */
+  .modalMask{
+    position:absolute; inset:0; background:rgba(0,0,0,.55);
+    display:none; align-items:center; justify-content:center;
+    z-index: 20;
+  }
+  .modal{
+    width:min(520px, calc(100vw - 24px));
+    border:1px solid var(--line);
+    border-radius:16px;
+    background: linear-gradient(180deg, var(--panel2), var(--panel));
+    box-shadow:0 0 40px #0008, 0 0 18px #00b7ff12 inset;
+    padding:12px;
+  }
+  .modal h2{margin:0 0 6px 0; font-size:14px; color:var(--ink)}
+  .modal p{margin:0 0 10px 0; font-size:12px; color:var(--muted); line-height:1.35}
+  .modal .actions{display:flex; gap:8px; justify-content:flex-end;}
+  .modal button{
+    border:1px solid var(--line);
+    background:#071c2d;
+    color:var(--ink);
+    padding:9px 10px;
+    border-radius:10px;
+    cursor:pointer;
+  }
+  .modal button:hover{border-color:#55d4ff; box-shadow:0 0 10px #3ad0ff18}
 </style>
 </head>
 <body>
@@ -133,15 +159,27 @@
       </div>
     </div>
 
-    <div class="hint">若素材未加载：检查同目录 bg.png / bgm.mp3 文件名大小写；或看右下角错误提示</div>
+    <div class="hint">提示：file:// 下浏览器会限制部分资源与音频自动播放；推荐用 GitHub Pages 或本地小服务器</div>
     <div class="toast" id="toast"></div>
+
+    <!-- modal for synthesis -->
+    <div class="modalMask" id="modalMask">
+      <div class="modal">
+        <h2 id="modalTitle">合成</h2>
+        <p id="modalDesc"></p>
+        <div class="actions">
+          <button id="modalCancel" type="button">稍后</button>
+          <button id="modalOk" type="button">合成</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <div class="side">
     <div class="tabs">
       <div class="tab active" data-tab="shop">商店</div>
       <div class="tab" data-tab="tank">鱼缸</div>
-      <div class="tab" data-tab="warehouse">仓库/合成</div>
+      <div class="tab" data-tab="warehouse">仓库</div>
       <div class="tab" data-tab="codex">图鉴</div>
     </div>
     <div class="panel" id="panel"></div>
@@ -150,37 +188,30 @@
 
 <script>
 (() => {
-  // ===== 配置区（方案A：同目录 bg.png / bgm.mp3）=====
-  const BG_URL = "bg.png";    // 你的背景图
-  const BGM_URL = "bgm.mp3";  // 你的背景音乐
-  const USE_FILE_BGM = true;  // true=优先用文件；失败则用合成
+  // ===== Config (方案A：同目录 bg.png / bgm.mp3) =====
+  const BG_URL = "bg.png";
+  const BGM_URL = "bgm.mp3";
+  const USE_FILE_BGM = true;
   const BGM_VOLUME = 0.35;
-  const BGM_AUTOSTART = true; // 会尝试自动播放；被拦截则等待首次交互
-  // ===================================================
+  const BGM_AUTOSTART = true;
 
-  // ---- error guard: prevent silent blank page
+  // ===== Error guard (show errors instead of blank) =====
   const toastHost = document.getElementById("toast");
   function toast(msg){
-    try{
-      const el=document.createElement("div");
-      el.className="t";
-      el.textContent=String(msg);
-      toastHost.appendChild(el);
-      setTimeout(()=>{ el.style.transition="opacity .5s"; el.style.opacity="0"; }, 2500);
-      setTimeout(()=>el.remove(), 3200);
-    }catch{}
+    const el=document.createElement("div");
+    el.className="t";
+    el.textContent=String(msg);
+    toastHost.appendChild(el);
+    setTimeout(()=>{ el.style.transition="opacity .5s"; el.style.opacity="0"; }, 2500);
+    setTimeout(()=>el.remove(), 3200);
   }
-  window.addEventListener("error", (e)=>{
-    toast("JS错误: " + (e?.message || e));
-  });
-  window.addEventListener("unhandledrejection", (e)=>{
-    toast("Promise错误: " + (e?.reason?.message || e?.reason || e));
-  });
+  window.addEventListener("error", (e)=>toast("JS错误: "+(e?.message||e)));
+  window.addEventListener("unhandledrejection", (e)=>toast("Promise错误: "+(e?.reason?.message||e?.reason||e)));
 
   const $ = sel => document.querySelector(sel);
   const fmt = n => {
     n = Number(n)||0;
-    if (n < 1e4) return Math.floor(n).toString();
+    if(n < 1e4) return Math.floor(n).toString();
     const u=["","K","M","B","T"]; let i=0,x=n;
     while(x>=1000 && i<u.length-1){x/=1000;i++}
     return (x>=100?x.toFixed(0):x>=10?x.toFixed(1):x.toFixed(2))+u[i];
@@ -192,7 +223,7 @@
 
   // ---- game constants
   const MAX_TANK = 20;
-  const TIME_SCALE = 60;
+  const TIME_SCALE = 60;         // for testing (1 = realtime)
   const HOUR = 3600;
   const COURTSHIP_INTERVAL = 24 * HOUR;
   const COURTSHIP_DURATION = 1 * HOUR;
@@ -203,12 +234,13 @@
   const TARGET_BYPRODUCT_30MIN = LOWEST_FISH_PRICE / BYPRODUCT_VALUE;
   const BYPRODUCT_PER_SEC_PER_FISH = TARGET_BYPRODUCT_30MIN / (30*60*MAX_TANK);
 
+  // ---- save
   const SAVE_KEY = "aquarium_idle_autosave::" + location.origin + location.pathname;
   const AUTOSAVE_EVERY_SEC = 5;
 
   // ---- state
   const state = {
-    ver: 7,
+    ver: 8,
     money: 150,
     byproduct: 0,
     byproductValue: BYPRODUCT_VALUE,
@@ -219,6 +251,7 @@
     log: [],
     bubbles: [],
     ui: { currentTab: "shop" },
+    synth: { lastPromptAt: 0, cooldownSec: 8 }
   };
 
   const SPECIES = ["蓝鳞","珊瑚","深渊","机械"];
@@ -259,85 +292,10 @@
     img.src = BG_URL;
   }
 
-  // ---- audio: file first, fallback synth
-  let bgmOn=false, bgmMode="none";
-  let bgmAudio=null;
-  let audioCtx=null, master=null, seqTimer=null, seqStep=0;
-
-  function setBgmButton(){ $("#audio").textContent = bgmOn ? "BGM：开" : "BGM：关"; }
-
-  async function tryStartFileBgm(){
-    if(!USE_FILE_BGM) return false;
-    if(!bgmAudio){
-      bgmAudio = new Audio(BGM_URL);
-      bgmAudio.loop = true;
-      bgmAudio.preload = "auto";
-      bgmAudio.volume = BGM_VOLUME;
-    }
-    try{
-      await bgmAudio.play();
-      bgmMode="file";
-      return true;
-    }catch(e){
-      return false;
-    }
-  }
-  function stopFileBgm(){
-    if(bgmAudio){
-      bgmAudio.pause();
-    }
-  }
-  function startSynthBgm(){
-    if(!audioCtx){
-      audioCtx = new (window.AudioContext||window.webkitAudioContext)();
-      master = audioCtx.createGain();
-      master.gain.value = 0.10;
-      master.connect(audioCtx.destination);
-    }
-    if(audioCtx.state==="suspended") audioCtx.resume();
-
-    const scale=[0,3,5,7,10];
-    const base=48;
-    const play=(midi,dur,type="sine")=>{
-      const t0=audioCtx.currentTime;
-      const o=audioCtx.createOscillator();
-      const g=audioCtx.createGain();
-      o.type=type;
-      o.frequency.value=440*Math.pow(2,(midi-69)/12);
-      g.gain.setValueAtTime(0.0001,t0);
-      g.gain.exponentialRampToValueAtTime(0.7,t0+0.01);
-      g.gain.exponentialRampToValueAtTime(0.0001,t0+dur);
-      o.connect(g); g.connect(master);
-      o.start(t0); o.stop(t0+dur+0.02);
-    };
-    const tick=()=>{
-      const deg=scale[seqStep%scale.length];
-      const oct=(seqStep%10<5)?0:12;
-      play(base+deg+oct,0.20,"sine");
-      if(seqStep%4===0) play(base-12+(seqStep%2?5:0),0.55,"triangle");
-      if(Math.random()<0.24) play(base+24+pick(scale),0.08,"sine");
-      seqStep++;
-      seqTimer=setTimeout(tick,320);
-    };
-    tick();
-    bgmMode="synth";
-  }
-  function stopSynthBgm(){ if(seqTimer){ clearTimeout(seqTimer); seqTimer=null; } }
-
-  async function startBgm(){
-    if(bgmOn) return;
-    bgmOn=true; setBgmButton();
-    const ok = await tryStartFileBgm();
-    if(!ok){
-      toast("文件BGM无法自动播放或加载失败，已回退合成BGM（首次交互后可正常播放文件）");
-      startSynthBgm();
-    }
-  }
-  function stopBgm(){
-    bgmOn=false; setBgmButton();
-    if(bgmMode==="file") stopFileBgm();
-    if(bgmMode==="synth") stopSynthBgm();
-    bgmMode="none";
+  // ---- HUD updater (fix: missing updateHUD caused your crash)
+  function updateHUD(){
+    $("#money").textContent = fmt(state.money);
+    $("#byprod").textContent = fmt(state.byproduct);
   }
 
   // ---- autosave
@@ -400,7 +358,7 @@
     if(document.visibilityState==="hidden") saveToLocal();
   });
 
-  // ---- core helpers
+  // ---- codex
   function fishKey(f){
     const tr=(f.traits||[]).slice().sort().join("|");
     const mut=f.mutation||"";
@@ -411,6 +369,7 @@
     if(!state.codex.discovered[key]){
       state.codex.discovered[key]=true;
       state.codex.total = Object.keys(state.codex.discovered).length;
+      toast(`图鉴解锁：${f.species}（${gradeName(f.grade)}）`);
     }
   }
 
@@ -440,14 +399,13 @@
       timeInTank: 0,
       courting: false,
       courtingLeft: 0,
-      pairedWith: null,
       pairedThisCycle: false,
       from
     };
 
-    // spawn inside visible area (requires resize already called)
-    const w = Math.max(200, stageRect.width || 800);
-    const h = Math.max(200, stageRect.height || 600);
+    // spawn inside visible area
+    const w = Math.max(240, stageRect.width || 800);
+    const h = Math.max(240, stageRect.height || 600);
     const marginX=60, top=90, bottom=h-70;
     f.x = clamp(rand(w - marginX, marginX), marginX, w-marginX);
     f.y = clamp(rand(bottom, top), top, bottom);
@@ -456,6 +414,7 @@
     return f;
   }
 
+  // ---- bubbles vfx
   function spawnBubbles(x,y,count,grade=1){
     const c = Math.max(2, count|0);
     for(let i=0;i<c;i++){
@@ -473,117 +432,158 @@
     }
   }
 
-  // ---- UI rendering
-  const panel = $("#panel");
-  let currentTab="shop";
-  function statusTag(text, cls="good"){ return `<span class="tag ${cls}">${text}</span>`; }
-  function setActiveTab(tab){
-    currentTab = tab;
-    state.ui.currentTab = tab;
-    document.querySelectorAll(".tab").forEach(x=>{
-      x.classList.toggle("active", x.dataset.tab===tab);
-    });
-  }
-  function renderShop(){
-    const cost = GRADE[1].price;
-    const moneyOk = state.money >= cost;
-    const capOk = state.fishTank.length < state.tank.capacity;
-    const can = moneyOk && capOk;
-    panel.innerHTML = `
-      <div class="section">
-        <h3>概览</h3>
-        <div class="mono">存档Key：${SAVE_KEY}</div>
-        <div style="margin-top:8px">
-          <span class="pill">鱼缸 ${state.fishTank.length}/${state.tank.capacity}</span>
-          <span class="pill">仓库 ${state.fishWarehouse.length}</span>
-          <span class="pill">图鉴 ${Object.keys(state.codex.discovered).length}</span>
-        </div>
-      </div>
-      <div class="section">
-        <h3>商店</h3>
-        <div class="card">
-          <div class="name">
-            <span>随机鱼苗（${gradeName(1)}）</span>
-            ${!moneyOk ? statusTag("货币不足","bad") : !capOk ? statusTag("容量不足","bad") : statusTag("可购买","good")}
-          </div>
-          <div class="desc">购买后进入鱼缸。点击鱼吐泡泡，可拖拽摆放。</div>
-          <div class="meta"><span class="pill">价格 ${cost}</span></div>
-          <button ${can?"":"disabled"} onclick="window.__buyFish()">购买鱼苗</button>
-        </div>
-      </div>
-      <div class="section">
-        <h3>日志</h3>
-        <div class="log">${(state.log||[]).map(x=>`<div>${x}</div>`).join("") || "<div>（暂无）</div>"}</div>
-      </div>
-    `;
-  }
-  function renderTank(){
-    panel.innerHTML = `
-      <div class="section">
-        <h3>鱼缸</h3>
-        <div class="row">
-          ${state.fishTank.slice().reverse().map(f=>`
-            <div class="card">
-              <div class="name"><span>${f.species}（${gradeName(f.grade)}）</span>${f.courting?statusTag("求偶","warn"):statusTag("单身","good")}</div>
-              <div class="desc">特征：${(f.traits||[]).join("、")||"无"}${f.mutation?`｜突变：${f.mutation}`:""}</div>
-              <div class="meta"><span class="pill">售价参考 ${gradePrice(f.grade)}</span></div>
-              <button onclick="window.__toWarehouse('${f.id}')">收进仓库</button>
-            </div>
-          `).join("") || "<div class='mono'>（鱼缸为空）</div>"}
-        </div>
-      </div>
-    `;
-  }
-  function renderWarehouse(){
-    const cnt={1:0,2:0,3:0,4:0,5:0};
-    for(const f of state.fishWarehouse) cnt[f.grade]++;
+  // ---- audio
+  let bgmOn=false, bgmMode="none";
+  let bgmAudio=null;
+  let audioCtx=null, master=null, seqTimer=null, seqStep=0;
 
-    panel.innerHTML = `
-      <div class="section">
-        <h3>仓库/合成</h3>
-        <div class="row">
-          ${[1,2,3,4,5].map(g=>`
-            <div class="card">
-              <div class="name"><span>${gradeName(g)}</span>${statusTag(`数量 ${cnt[g]}`,"good")}</div>
-              <div class="desc">10合1：${g<5?`品质${g}→品质${g+1}`:"最高品质不可合成"}</div>
-              <button ${g>=5||cnt[g]<10?"disabled":""} onclick="window.__synth(${g})">${g>=5?"不可合成":(cnt[g]<10?"数量不足":"合成")}</button>
-            </div>
-          `).join("")}
-        </div>
-      </div>
-      <div class="section">
-        <h3>仓库鱼列表</h3>
-        <div class="row">
-          ${state.fishWarehouse.slice().reverse().map(f=>{
-            const canBack = state.fishTank.length < state.tank.capacity;
-            return `<div class="card">
-              <div class="name"><span>${f.species}（${gradeName(f.grade)}）</span>${statusTag("仓库","good")}</div>
-              <div class="desc">特征：${(f.traits||[]).join("、")||"无"}${f.mutation?`｜突变：${f.mutation}`:""}</div>
-              <button ${canBack?"":"disabled"} onclick="window.__toTank('${f.id}')">${canBack?"放回鱼缸":"鱼缸满"}</button>
-            </div>`;
-          }).join("") || "<div class='mono'>（仓库为空）</div>"}
-        </div>
-      </div>
-    `;
+  function setBgmButton(){ $("#audio").textContent = bgmOn ? "BGM：开" : "BGM：关"; }
+
+  async function tryStartFileBgm(){
+    if(!USE_FILE_BGM) return false;
+    if(!bgmAudio){
+      bgmAudio = new Audio(BGM_URL);
+      bgmAudio.loop = true;
+      bgmAudio.preload = "auto";
+      bgmAudio.volume = BGM_VOLUME;
+    }
+    try{
+      await bgmAudio.play();
+      bgmMode="file";
+      return true;
+    }catch(e){
+      return false;
+    }
   }
-  function renderCodex(){
-    const keys = Object.keys(state.codex.discovered);
-    panel.innerHTML = `
-      <div class="section">
-        <h3>图鉴（${keys.length}）</h3>
-        <div class="row">
-          ${keys.slice(0,200).map(k=>`<div class="card"><div class="name"><span>${k}</span>${statusTag("已解锁","good")}</div></div>`).join("") || "<div class='mono'>（暂无）</div>"}
-        </div>
-      </div>
-    `;
+  function stopFileBgm(){ if(bgmAudio) bgmAudio.pause(); }
+
+  function startSynthBgm(){
+    if(!audioCtx){
+      audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+      master = audioCtx.createGain();
+      master.gain.value = 0.10;
+      master.connect(audioCtx.destination);
+    }
+    if(audioCtx.state==="suspended") audioCtx.resume();
+
+    const scale=[0,3,5,7,10];
+    const base=48;
+    const play=(midi,dur,type="sine")=>{
+      const t0=audioCtx.currentTime;
+      const o=audioCtx.createOscillator();
+      const g=audioCtx.createGain();
+      o.type=type;
+      o.frequency.value=440*Math.pow(2,(midi-69)/12);
+      g.gain.setValueAtTime(0.0001,t0);
+      g.gain.exponentialRampToValueAtTime(0.7,t0+0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001,t0+dur);
+      o.connect(g); g.connect(master);
+      o.start(t0); o.stop(t0+dur+0.02);
+    };
+    const tick=()=>{
+      const deg=scale[seqStep%scale.length];
+      const oct=(seqStep%10<5)?0:12;
+      play(base+deg+oct,0.20,"sine");
+      if(seqStep%4===0) play(base-12+(seqStep%2?5:0),0.55,"triangle");
+      if(Math.random()<0.24) play(base+24+pick(scale),0.08,"sine");
+      seqStep++;
+      seqTimer=setTimeout(tick,320);
+    };
+    tick();
+    bgmMode="synth";
   }
-  function renderPanel(){
-    state.ui.currentTab=currentTab;
-    if(currentTab==="shop") renderShop();
-    if(currentTab==="tank") renderTank();
-    if(currentTab==="warehouse") renderWarehouse();
-    if(currentTab==="codex") renderCodex();
+  function stopSynthBgm(){ if(seqTimer){ clearTimeout(seqTimer); seqTimer=null; } }
+
+  async function startBgm(){
+    if(bgmOn) return;
+    bgmOn=true; setBgmButton();
+    const ok = await tryStartFileBgm();
+    if(!ok){
+      // file:// 下自动播放经常失败，这里给提示
+      toast("BGM文件无法自动播放（浏览器限制或file://限制），已回退合成BGM；点击页面任意处通常可解锁播放。");
+      startSynthBgm();
+    }
   }
+  function stopBgm(){
+    bgmOn=false; setBgmButton();
+    if(bgmMode==="file") stopFileBgm();
+    if(bgmMode==="synth") stopSynthBgm();
+    bgmMode="none";
+  }
+
+  async function autoStartBgmMaybe(){
+    if(!BGM_AUTOSTART) return;
+    const ok = await tryStartFileBgm();
+    if(ok){
+      bgmOn=true; bgmMode="file"; setBgmButton();
+      return;
+    }
+    // wait for first user gesture
+    const once = async ()=>{
+      window.removeEventListener("pointerdown", once, true);
+      window.removeEventListener("keydown", once, true);
+      if(!bgmOn) await startBgm();
+    };
+    window.addEventListener("pointerdown", once, true);
+    window.addEventListener("keydown", once, true);
+  }
+
+  // ---- synthesis modal (auto pop when condition met)
+  const modalMask = $("#modalMask");
+  const modalTitle = $("#modalTitle");
+  const modalDesc = $("#modalDesc");
+  const modalOk = $("#modalOk");
+  const modalCancel = $("#modalCancel");
+
+  let modalOpen = false;
+  let modalGrade = null;
+
+  function warehouseCounts(){
+    const cnt={1:0,2:0,3:0,4:0,5:0};
+    for(const f of state.fishWarehouse) cnt[f.grade] = (cnt[f.grade]||0)+1;
+    return cnt;
+  }
+
+  function maybePromptSynthesis(){
+    // only auto prompt if not open and cooldown passed
+    if(modalOpen) return;
+    const t = now()/1000;
+    if(t - state.synth.lastPromptAt < state.synth.cooldownSec) return;
+
+    const cnt = warehouseCounts();
+    // pick the highest grade that can synth (feel rewarding)
+    let g = null;
+    for(let i=4;i>=1;i--){
+      if(cnt[i] >= 10){ g=i; break; }
+    }
+    if(!g) return;
+
+    state.synth.lastPromptAt = t;
+    openSynthesisModal(g, cnt[g]);
+  }
+
+  function openSynthesisModal(g, have){
+    modalOpen = true;
+    modalGrade = g;
+    modalTitle.textContent = "合成机会";
+    modalDesc.textContent = `你的仓库中已有 ${have} 只 ${gradeName(g)}，可以消耗 10 只合成 1 只随机 ${gradeName(g+1)}。是否立刻合成？`;
+    modalMask.style.display = "flex";
+  }
+
+  function closeSynthesisModal(){
+    modalOpen = false;
+    modalGrade = null;
+    modalMask.style.display = "none";
+  }
+
+  modalCancel.addEventListener("click", closeSynthesisModal);
+  modalMask.addEventListener("click", (e)=>{
+    if(e.target === modalMask) closeSynthesisModal();
+  });
+  modalOk.addEventListener("click", ()=>{
+    if(modalGrade!=null) synthesize(modalGrade);
+    closeSynthesisModal();
+  });
 
   // ---- gameplay actions
   function buyFish(){
@@ -596,45 +596,59 @@
     scheduleAutosaveSoon();
     updateHUD(); renderPanel();
   }
+
   function moveToWarehouse(id){
     const idx=state.fishTank.findIndex(f=>f.id===id);
     if(idx<0) return;
     const f=state.fishTank.splice(idx,1)[0];
     f.timeInTank=0; f.courting=false; f.courtingLeft=0;
+    f.drag.active=false;
     state.fishWarehouse.push(f);
     scheduleAutosaveSoon();
     updateHUD(); renderPanel();
+    maybePromptSynthesis();
   }
+
   function moveToTank(id){
     if(state.fishTank.length >= state.tank.capacity){ toast("鱼缸已满"); return; }
     const idx=state.fishWarehouse.findIndex(f=>f.id===id);
     if(idx<0) return;
     const f=state.fishWarehouse.splice(idx,1)[0];
-    // respawn position
-    const w = Math.max(200, stageRect.width || 800);
-    const h = Math.max(200, stageRect.height || 600);
+
+    const w = Math.max(240, stageRect.width || 800);
+    const h = Math.max(240, stageRect.height || 600);
     const marginX=60, top=90, bottom=h-70;
     f.x = clamp(rand(w - marginX, marginX), marginX, w-marginX);
     f.y = clamp(rand(bottom, top), top, bottom);
     f.vx = rand(55,-55); f.vy = rand(18,-18);
+    f.wiggle = 0;
     f.timeInTank=0; f.courting=false; f.courtingLeft=0;
+
     state.fishTank.push(f);
     scheduleAutosaveSoon();
     updateHUD(); renderPanel();
   }
+
   function synthesize(g){
     g|=0;
     if(g<1||g>=5) return;
     const idxs=[];
-    for(let i=0;i<state.fishWarehouse.length;i++) if(state.fishWarehouse[i].grade===g) idxs.push(i);
+    for(let i=0;i<state.fishWarehouse.length;i++){
+      if(state.fishWarehouse[i].grade===g) idxs.push(i);
+    }
     if(idxs.length<10){ toast("数量不足"); return; }
     for(let k=0;k<10;k++){
       state.fishWarehouse.splice(idxs[idxs.length-1-k],1);
     }
-    state.fishWarehouse.push(newFish({grade:g+1, from:`synth(${g})`}));
+    const child = newFish({grade:g+1, from:`synth(${g})`});
+    state.fishWarehouse.push(child);
+    toast(`合成成功：获得 1 只 ${child.species}（${gradeName(child.grade)}）`);
     scheduleAutosaveSoon();
     updateHUD(); renderPanel();
+    // maybe another prompt if still enough
+    maybePromptSynthesis();
   }
+
   function sellByproduct(){
     const amt=Math.floor(state.byproduct);
     if(amt<=0){ toast("没有副产品"); return; }
@@ -648,6 +662,7 @@
 
   // ---- drawing
   function hsl(h,s,l,a=1){ return `hsla(${h},${s}%,${l}%,${a})`; }
+
   function drawBackground(t){
     ctx.clearRect(0,0,W,H);
     if(bg.ready && bg.img){
@@ -656,6 +671,7 @@
       const iw=img.naturalWidth||img.width, ih=img.naturalHeight||img.height;
       const cRatio=cw/ch, iRatio=iw/ih;
       let dw,dh;
+      // cover
       if(iRatio>cRatio){ dh=ch; dw=ch*iRatio; } else { dw=cw; dh=cw/iRatio; }
       const dx=(cw-dw)/2, dy=(ch-dh)/2;
       ctx.drawImage(img, dx, dy, dw, dh);
@@ -678,6 +694,7 @@
     g.addColorStop(1,"rgba(0,0,0,0.55)");
     ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
   }
+
   function drawBubbles(){
     for(const b of state.bubbles){
       const x=b.x*DPR, y=b.y*DPR, r=b.r*DPR;
@@ -689,11 +706,15 @@
       ctx.restore();
     }
   }
+
+  // FIX: fish now has tail + eye again (restored full shape)
   function drawFish(f,t){
     const x=f.x*DPR, y=f.y*DPR;
     const hue=GRADE[f.grade].hue, lux=GRADE[f.grade].lux;
     const s=(f.size*(0.95+0.08*f.grade))*DPR;
     const dir=f.vx>=0?1:-1;
+
+    // glow aura
     const pulse=1+Math.sin(t*0.002+f.anim.crownPulse)*0.08*lux;
     ctx.save();
     ctx.globalAlpha=0.06+0.12*lux;
@@ -702,15 +723,121 @@
     ctx.restore();
 
     ctx.save();
-    ctx.translate(x,y); ctx.scale(dir,1);
-    ctx.rotate(Math.sin(f.wiggle)*0.05);
+    ctx.translate(x,y);
+    ctx.scale(dir,1);
+    const flutter = (f.grade>=4) ? Math.sin(t*0.01 + f.anim.sparkleT)*0.12 : 0;
+    ctx.rotate(Math.sin(f.wiggle)*0.05 + flutter);
+
+    // body gradient
     const grad=ctx.createLinearGradient(-s*1.2,0,s*1.4,0);
     grad.addColorStop(0,hsl(hue,85,55,1));
     grad.addColorStop(1,hsl(hue+20,90,75,0.35+0.35*lux));
     ctx.fillStyle=grad;
     ctx.strokeStyle=hsl(hue+10,90,85,0.6);
     ctx.lineWidth=(1.2+lux*1.2)*DPR;
-    ctx.beginPath(); ctx.ellipse(0,0,s*1.25,s*0.85,0,0,Math.PI*2); ctx.fill(); ctx.stroke();
+
+    // body
+    ctx.beginPath();
+    ctx.ellipse(0,0,s*1.25,s*0.85,0,0,Math.PI*2);
+    ctx.fill(); ctx.stroke();
+
+    // tail
+    const tail = 0.85 + lux*0.75;
+    const tailWig = Math.sin(t*0.01 + f.wiggle)*0.15*(0.4+lux);
+    ctx.save();
+    ctx.rotate(tailWig);
+    ctx.beginPath();
+    ctx.moveTo(-s*1.15,0);
+    ctx.lineTo(-s*(1.9*tail), -s*(0.7+0.25*lux));
+    ctx.lineTo(-s*(1.65*tail), 0);
+    ctx.lineTo(-s*(1.9*tail), s*(0.7+0.25*lux));
+    ctx.closePath();
+    ctx.fill(); ctx.stroke();
+    ctx.restore();
+
+    // ornaments for grade>=3
+    if(f.grade>=3){
+      ctx.save();
+      ctx.globalAlpha = 0.25 + 0.25*lux;
+      ctx.strokeStyle = hsl(hue+35, 95, 88, 0.8);
+      ctx.lineWidth = (0.8+lux*1.2)*DPR;
+      for(let i=0;i<3+(f.grade-3);i++){
+        ctx.beginPath();
+        ctx.moveTo(-s*0.4, -s*0.35 + i*s*0.25);
+        ctx.quadraticCurveTo(s*0.2, -s*0.15 + i*s*0.22, s*0.7, -s*0.28 + i*s*0.18);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    // orbit sparkles grade>=4
+    if(f.grade>=4){
+      const n = (f.grade===4)?3:5;
+      ctx.save();
+      ctx.globalAlpha = 0.55;
+      for(let i=0;i<n;i++){
+        const ang = t*0.002 + f.anim.sparkleT + i*(Math.PI*2/n);
+        const rr = s*(1.25 + 0.25*Math.sin(t*0.004+ i));
+        const px = Math.cos(ang)*rr*0.55;
+        const py = Math.sin(ang)*rr*0.35 - s*0.15;
+        ctx.fillStyle = hsl(hue+60+i*10, 100, 85, 0.85);
+        ctx.beginPath();
+        ctx.arc(px,py, (1.2+lux*1.8)*DPR,0,Math.PI*2);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+
+    // crown grade==5
+    if(f.grade===5){
+      const cp = 1 + Math.sin(t*0.006 + f.anim.crownPulse)*0.22;
+      ctx.save();
+      ctx.globalAlpha=0.75;
+      ctx.fillStyle=hsl(hue+65, 100, 86, 0.95);
+      ctx.beginPath();
+      ctx.moveTo(s*0.28,-s*(0.58*cp));
+      ctx.lineTo(s*0.50,-s*(0.86*cp));
+      ctx.lineTo(s*0.72,-s*(0.58*cp));
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // eye (FIX)
+    ctx.fillStyle="rgba(5,10,16,0.9)";
+    ctx.beginPath();
+    ctx.arc(s*0.55,-s*0.12, s*0.12, 0, Math.PI*2);
+    ctx.fill();
+    ctx.fillStyle=hsl(hue+30, 90, 90, 0.95);
+    ctx.beginPath();
+    ctx.arc(s*0.59,-s*0.16, s*0.04, 0, Math.PI*2);
+    ctx.fill();
+
+    // courting indicator
+    if(f.courting){
+      ctx.save();
+      ctx.globalAlpha=0.35;
+      ctx.strokeStyle = hsl(330, 90, 70, 0.9);
+      ctx.lineWidth = 1.3*DPR;
+      ctx.beginPath();
+      ctx.arc(s*0.2, -s*0.75, s*0.28, 0, Math.PI*2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // click burst
+    if(f.anim.burst>0){
+      const k=f.anim.burst;
+      ctx.save();
+      ctx.globalAlpha=0.35*k;
+      ctx.strokeStyle=hsl(hue+40,95,85,0.9);
+      ctx.lineWidth=(1.0+2.2*lux)*DPR;
+      ctx.beginPath();
+      ctx.arc(0,0, s*(1.5 + (1-k)*1.5), 0, Math.PI*2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
     ctx.restore();
   }
 
@@ -778,8 +905,125 @@
   canvas.addEventListener("pointerup", endPointer);
   canvas.addEventListener("pointercancel", endPointer);
 
-  // ---- loop
-  let last=now(), hudTimer=0;
+  // ---- panel render
+  const panel = $("#panel");
+  let currentTab="shop";
+  function statusTag(text, cls="good"){ return `<span class="tag ${cls}">${text}</span>`; }
+  function setActiveTab(tab){
+    currentTab = tab;
+    state.ui.currentTab = tab;
+    document.querySelectorAll(".tab").forEach(x=>{
+      x.classList.toggle("active", x.dataset.tab===tab);
+    });
+  }
+
+  function renderShop(){
+    const cost = GRADE[1].price;
+    const moneyOk = state.money >= cost;
+    const capOk = state.fishTank.length < state.tank.capacity;
+    const can = moneyOk && capOk;
+
+    panel.innerHTML = `
+      <div class="section">
+        <h3>概览</h3>
+        <div class="pill">鱼缸 ${state.fishTank.length}/${state.tank.capacity}</div>
+        <div class="pill">仓库 ${state.fishWarehouse.length}</div>
+        <div class="pill">图鉴 ${Object.keys(state.codex.discovered).length}</div>
+        <div class="pill">存档Key <span style="opacity:.8">${SAVE_KEY}</span></div>
+      </div>
+
+      <div class="section">
+        <h3>商店</h3>
+        <div class="card">
+          <div class="name">
+            <span>随机鱼苗（${gradeName(1)}）</span>
+            ${!moneyOk ? statusTag("货币不足","bad") : !capOk ? statusTag("容量不足","bad") : statusTag("可购买","good")}
+          </div>
+          <div class="desc">购买后进入鱼缸。点击鱼吐泡泡，可拖拽摆放。</div>
+          <div class="meta"><span class="pill">价格 ${cost}</span></div>
+          <button ${can?"":"disabled"} onclick="window.__buyFish()">购买鱼苗</button>
+        </div>
+      </div>
+
+      <div class="section">
+        <h3>日志</h3>
+        <div class="log">${(state.log||[]).map(x=>`<div>${x}</div>`).join("") || "<div>（暂无）</div>"}</div>
+      </div>
+    `;
+  }
+
+  function renderTank(){
+    panel.innerHTML = `
+      <div class="section">
+        <h3>鱼缸</h3>
+        <div class="row">
+          ${state.fishTank.slice().reverse().map(f=>`
+            <div class="card">
+              <div class="name">
+                <span>${f.species}（${gradeName(f.grade)}）</span>
+                ${f.courting?statusTag("求偶","warn"):statusTag("单身","good")}
+              </div>
+              <div class="desc">特征：${(f.traits||[]).join("、")||"无"}${f.mutation?`｜突变：${f.mutation}`:""}</div>
+              <div class="meta"><span class="pill">售价参考 ${gradePrice(f.grade)}</span></div>
+              <button onclick="window.__toWarehouse('${f.id}')">收进仓库</button>
+            </div>
+          `).join("") || "<div class='mono'>（鱼缸为空）</div>"}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderWarehouse(){
+    const cnt = warehouseCounts();
+    const canSynth = [1,2,3,4].some(g=>cnt[g]>=10);
+
+    panel.innerHTML = `
+      <div class="section">
+        <h3>仓库</h3>
+        <div class="small">当仓库里某个品质数量 ≥ 10 时，会自动弹出“合成”选项。</div>
+        <div style="margin-top:8px">
+          ${[1,2,3,4,5].map(g=>`<span class="pill">${gradeName(g)} × ${cnt[g]}</span>`).join(" ")}
+        </div>
+        ${canSynth ? `<div style="margin-top:10px" class="tag good">已满足合成条件（将自动提示）</div>` : `<div style="margin-top:10px" class="tag">尚未满足合成条件</div>`}
+      </div>
+
+      <div class="section">
+        <h3>仓库鱼列表</h3>
+        <div class="row">
+          ${state.fishWarehouse.slice().reverse().map(f=>{
+            const canBack = state.fishTank.length < state.tank.capacity;
+            return `<div class="card">
+              <div class="name"><span>${f.species}（${gradeName(f.grade)}）</span>${statusTag("仓库","good")}</div>
+              <div class="desc">特征：${(f.traits||[]).join("、")||"无"}${f.mutation?`｜突变：${f.mutation}`:""}</div>
+              <button ${canBack?"":"disabled"} onclick="window.__toTank('${f.id}')">${canBack?"放回鱼缸":"鱼缸满"}</button>
+            </div>`;
+          }).join("") || "<div class='mono'>（仓库为空）</div>"}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderCodex(){
+    const keys = Object.keys(state.codex.discovered);
+    panel.innerHTML = `
+      <div class="section">
+        <h3>图鉴（${keys.length}）</h3>
+        <div class="row">
+          ${keys.slice(0,200).map(k=>`<div class="card"><div class="name"><span>${k}</span>${statusTag("已解锁","good")}</div></div>`).join("") || "<div class='mono'>（暂无）</div>"}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderPanel(){
+    state.ui.currentTab=currentTab;
+    if(currentTab==="shop") renderShop();
+    if(currentTab==="tank") renderTank();
+    if(currentTab==="warehouse") renderWarehouse();
+    if(currentTab==="codex") renderCodex();
+  }
+
+  // ---- courtship/breeding
   function updateCourtship(dtScaled){
     for(const f of state.fishTank){
       f.timeInTank += dtScaled;
@@ -792,7 +1036,7 @@
         f.courting=true; f.courtingLeft=COURTSHIP_DURATION;
       }
     }
-    // pair & one attempt
+    // simple pairing attempt
     const singles = state.fishTank.filter(f=>f.courting && !f.pairedThisCycle);
     for(let i=singles.length-1;i>0;i--){ const j=(Math.random()*(i+1))|0; [singles[i],singles[j]]=[singles[j],singles[i]]; }
     for(let i=0;i+1<singles.length;i+=2){
@@ -804,6 +1048,8 @@
         if(state.fishTank.length < state.tank.capacity) state.fishTank.push(child);
         else state.fishWarehouse.push(child);
         scheduleAutosaveSoon();
+        toast(`繁殖成功：获得后代（${gradeName(child.grade)}）`);
+        maybePromptSynthesis();
       }
       for(const f of [a,b]){
         f.courting=false; f.courtingLeft=0; f.timeInTank=0;
@@ -812,12 +1058,14 @@
     }
   }
 
+  // ---- loop
+  let last=now(), hudTimer=0;
   function step(){
     const t=now();
     const dt=Math.min(0.05,(t-last)/1000);
     last=t;
 
-    // keep rect updated; resize if needed
+    // keep rect updated
     const r = canvas.getBoundingClientRect();
     if(Math.abs(r.width-stageRect.width)>0.5 || Math.abs(r.height-stageRect.height)>0.5){
       resize();
@@ -827,7 +1075,7 @@
 
     const dtScaled = dt*TIME_SCALE;
 
-    // swim + anim
+    // swim
     const w=stageRect.width||800, h=stageRect.height||600;
     const marginX=40, top=90, bottom=h-50;
 
@@ -835,17 +1083,23 @@
       if(!f.drag.active){
         f.wiggle += dt*(2.5 + Math.abs(f.vx)*0.02);
         f.x += f.vx*dt; f.y += f.vy*dt;
+
         if(f.x < marginX){ f.x=marginX; f.vx=Math.abs(f.vx); }
         if(f.x > w-marginX){ f.x=w-marginX; f.vx=-Math.abs(f.vx); }
         if(f.y < top){ f.y=top; f.vy=Math.abs(f.vy); }
         if(f.y > bottom){ f.y=bottom; f.vy=-Math.abs(f.vy); }
+
         if(Math.random()<0.02){
           f.vx = clamp(f.vx + rand(16,-16), -80, 80);
           f.vy = clamp(f.vy + rand(8,-8), -38, 38);
         }
+      }else{
+        f.wiggle += dt*2.2;
       }
+
       if(f.anim.burst>0) f.anim.burst=Math.max(0,f.anim.burst-dt*2.2);
       f.anim.crownPulse += dt*(0.4+0.2*f.grade);
+      f.anim.sparkleT += dt*(0.6+0.3*f.grade);
     }
 
     // bubbles
@@ -864,6 +1118,12 @@
 
     updateCourtship(dtScaled);
 
+    // ambient bubbles
+    if(Math.random()<0.03 && state.fishTank.length){
+      const f = pick(state.fishTank);
+      spawnBubbles(f.x+rand(10,-10), f.y+rand(8,-8), 1, 1);
+    }
+
     drawBackground(t);
     drawBubbles();
     for(const f of state.fishTank) drawFish(f,t);
@@ -871,9 +1131,10 @@
     hudTimer += dt;
     if(hudTimer>0.25){
       hudTimer=0;
-      $("#money").textContent = fmt(state.money);
-      $("#byprod").textContent = fmt(state.byproduct);
+      updateHUD();
       renderPanel();
+      // check synth prompt periodically (not only on actions)
+      if(currentTab==="warehouse") maybePromptSynthesis();
     }
 
     autosaveTimer += dt;
@@ -884,19 +1145,19 @@
     requestAnimationFrame(step);
   }
 
-  // ---- bind UI
+  // ---- UI bind
   window.__buyFish=buyFish;
   window.__toWarehouse=moveToWarehouse;
   window.__toTank=moveToTank;
-  window.__synth=synthesize;
 
   $("#sell").addEventListener("click", sellByproduct);
   $("#save").addEventListener("click", ()=>{ saveToLocal(); toast("已保存"); });
   $("#load").addEventListener("click", ()=>{
     if(loadFromLocal()){
       setActiveTab(state.ui.currentTab||"shop");
-      renderPanel();
+      updateHUD(); renderPanel();
       toast("已读取");
+      maybePromptSynthesis();
     }else toast("没有存档");
   });
   $("#reset").addEventListener("click", ()=>{
@@ -913,39 +1174,17 @@
       setActiveTab(t.dataset.tab);
       renderPanel();
       scheduleAutosaveSoon();
+      if(currentTab==="warehouse") maybePromptSynthesis();
     });
   });
 
-  async function autoStartBgmMaybe(){
-    if(!BGM_AUTOSTART) return;
-    const ok = await tryStartFileBgm();
-    if(ok){
-      bgmOn=true; bgmMode="file"; setBgmButton();
-      return;
-    }
-    // wait for first user gesture then start proper file (or fallback)
-    const once = async ()=>{
-      window.removeEventListener("pointerdown", once, true);
-      window.removeEventListener("keydown", once, true);
-      if(!bgmOn) await startBgm();
-    };
-    window.addEventListener("pointerdown", once, true);
-    window.addEventListener("keydown", once, true);
-  }
-
   // ---- init
   function init(){
-    // 1) resize first (critical)
-    resize();
+    resize();                // important
+    loadBackground();        // optional
+    setBgmButton();
+    autoStartBgmMaybe();
 
-    // 2) always render panel at least once (so "right UI" never blank)
-    setActiveTab("shop");
-    renderPanel();
-
-    // 3) load resources (won't crash if missing)
-    loadBackground();
-
-    // 4) load save or create starters
     const loaded = loadFromLocal();
     if(!loaded){
       state.fishTank.push(newFish({grade:1, from:"starter"}));
@@ -953,22 +1192,23 @@
       state.log.unshift(`[${new Date().toLocaleTimeString()}] 首次进入：创建初始鱼`);
       scheduleAutosaveSoon();
     }else{
-      setActiveTab(state.ui.currentTab || "shop");
-      renderPanel();
       toast("已自动读取上次进度");
     }
 
-    // 5) update HUD and start loop
-    $("#money").textContent = fmt(state.money);
-    $("#byprod").textContent = fmt(state.byproduct);
+    setActiveTab(state.ui.currentTab || "shop");
+    updateHUD();
+    renderPanel();
 
-    // 6) audio
-    setBgmButton();
-    autoStartBgmMaybe();
+    // Note about file:// origin issue
+    if(location.protocol==="file:"){
+      toast("你正在用 file:// 打开。建议用 GitHub Pages 或本地服务器（如 VSCode Live Server），避免安全源限制。");
+    }
 
     requestAnimationFrame(step);
-  }
 
+    // initial synth prompt if applicable
+    setTimeout(maybePromptSynthesis, 800);
+  }
   init();
 })();
 </script>
