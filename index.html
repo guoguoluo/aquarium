@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>深蓝水族箱：放置繁育图鉴（自定义背景图版）</title>
+<title>深蓝水族箱：放置繁育图鉴（自定义背景图 + 默认BGM）</title>
 <style>
   :root{
     --bg0:#061424; --bg1:#08263a;
@@ -138,7 +138,7 @@
       </div>
     </div>
 
-    <div class="hint">背景替换：把你的图片放同目录命名 bg.png（或改代码 BG_URL）｜自动存档：同URL再次进入会恢复</div>
+    <div class="hint">BGM配置：把 bgm.mp3 放同目录（或改 BGM_URL）｜首次用户交互后会自动播放（浏览器限制）</div>
     <div class="toast" id="toast"></div>
   </div>
 
@@ -156,13 +156,16 @@
 <script>
 (() => {
   // ========= 背景图配置 =========
-  // 1) 把图片放到 index.html 同目录，命名 bg.png（推荐）
-  // 2) 或者改成 "assets/bg.png"
   const BG_URL = "bg.png";
-  // 背景缩放模式：cover=铺满裁切 / contain=完整显示留黑边
   const BG_FIT = "cover"; // "cover" | "contain"
-  // 背景暗化（让鱼更显眼），0~1
   const BG_DARKEN = 0.25;
+
+  // ========= 默认BGM配置 =========
+  // 推荐：把 bgm.mp3 放在 index.html 同目录
+  const USE_FILE_BGM = true;     // true=优先使用音频文件；false=只用合成BGM
+  const BGM_URL = "bgm.mp3";     // 或 "assets/bgm.mp3"
+  const BGM_VOLUME = 0.35;       // 0~1
+  const BGM_AUTOSTART = true;    // 尝试自动开始（可能被浏览器拦截）
   // ===========================
 
   const $ = sel => document.querySelector(sel);
@@ -193,7 +196,7 @@
   const AUTOSAVE_EVERY_SEC = 5;
 
   const state = {
-    ver: 5,
+    ver: 6,
     money: 150,
     byproduct: 0,
     byproductValue: BYPRODUCT_VALUE,
@@ -259,7 +262,7 @@
     img.decoding = "async";
     img.onload = () => { bg.img = img; bg.ready = true; bg.failed = false; };
     img.onerror = () => { bg.failed = true; bg.ready = false; };
-    img.src = BG_URL + (BG_URL.includes("?") ? "&" : "?") + "v=" + Date.now(); // cache-bust for local testing
+    img.src = BG_URL;
   }
 
   function toast(s){
@@ -439,7 +442,6 @@
   let autosaveTimer = 0;
   let autosaveSoonFlag = false;
   function scheduleAutosaveSoon(){ autosaveSoonFlag = true; }
-
   function serializeState(){
     return {
       ver: state.ver,
@@ -571,12 +573,9 @@
     }
   }
 
-  // ---- Drawing helpers
+  // ---- Drawing
   function hsl(h,s,l,a=1){ return `hsla(${h},${s}%,${l}%,${a})`; }
 
-  // Draw background:
-  // 1) if bg image loaded: draw it with fit mode + darken overlay
-  // 2) else: fallback to procedural
   function drawBackground(t){
     ctx.clearRect(0,0,W,H);
 
@@ -593,7 +592,7 @@
       if(BG_FIT==="contain"){
         if(iRatio > cRatio){ dw=cw; dh=cw/iRatio; }
         else { dh=ch; dw=ch*iRatio; }
-      }else{ // cover
+      }else{
         if(iRatio > cRatio){ dh=ch; dw=ch*iRatio; }
         else { dw=cw; dh=cw/iRatio; }
       }
@@ -608,7 +607,7 @@
         ctx.fillRect(0,0,cw,ch);
         ctx.restore();
       }
-      // add subtle vignette to unify
+
       const g=ctx.createRadialGradient(cw*0.5,ch*0.45, Math.min(cw,ch)*0.1, cw*0.5,ch*0.45, Math.max(cw,ch)*0.7);
       g.addColorStop(0,"rgba(0,0,0,0)");
       g.addColorStop(1,"rgba(0,0,0,0.55)");
@@ -617,7 +616,6 @@
       return;
     }
 
-    // fallback procedural
     ctx.save();
     ctx.globalAlpha=0.22;
     for(let i=0;i<6;i++){
@@ -854,7 +852,7 @@
   canvas.addEventListener("pointerup", endPointer);
   canvas.addEventListener("pointercancel", endPointer);
 
-  // ---- Panel
+  // ---- UI panel
   const panel = $("#panel");
   let currentTab = "shop";
   function statusTag(text, cls="good"){ return `<span class="tag ${cls}">${text}</span>`; }
@@ -865,13 +863,11 @@
       x.classList.toggle("active", x.dataset.tab===tab);
     });
   }
-
   function renderShop(){
     const cost = GRADE[1].price;
     const moneyOk = state.money >= cost;
     const capOk = state.fishTank.length < state.tank.capacity;
     const can = moneyOk && capOk;
-
     panel.innerHTML = `
       <div class="section">
         <h3>概览</h3>
@@ -905,7 +901,6 @@
       </div>
     `;
   }
-
   function renderTank(){
     const courting = state.fishTank.filter(f=>f.courting).length;
     panel.innerHTML = `
@@ -937,11 +932,9 @@
       </div>
     `;
   }
-
   function renderWarehouse(){
     const cnt = {1:0,2:0,3:0,4:0,5:0};
     for(const f of state.fishWarehouse) cnt[f.grade]++;
-
     panel.innerHTML = `
       <div class="section">
         <h3>仓库/合成</h3>
@@ -976,7 +969,6 @@
       </div>
     `;
   }
-
   function renderCodex(){
     const keys = Object.keys(state.codex.discovered);
     panel.innerHTML = `
@@ -998,11 +990,9 @@
             </div>`;
           }).join("") : `<div class="small">（尚未发现条目）</div>`}
         </div>
-        ${keys.length>240?`<div class="small">仅展示前 240 条（总计 ${keys.length}）。</div>`:""}
       </div>
     `;
   }
-
   function renderPanel(){
     state.ui.currentTab = currentTab;
     if(currentTab==="shop") renderShop();
@@ -1011,12 +1001,6 @@
     if(currentTab==="codex") renderCodex();
   }
 
-  // ---- Bindings
-  window.__buyFish = buyFish;
-  window.__toWarehouse = moveToWarehouse;
-  window.__toTank = moveToTank;
-  window.__synth = synthesize;
-
   document.querySelectorAll(".tab").forEach(t=>{
     t.addEventListener("click", ()=>{
       setActiveTab(t.dataset.tab);
@@ -1024,6 +1008,135 @@
       scheduleAutosaveSoon();
     });
   });
+
+  // ---- BGM system: file first, fallback to synth
+  let bgmOn = false;
+  let bgmMode = "none"; // "file" | "synth" | "none"
+  let bgmAudio = null;
+
+  // synth
+  let audioCtx=null, master=null, seqTimer=null, seqStep=0;
+
+  function setBgmButton(){
+    $("#audio").textContent = bgmOn ? "BGM：开" : "BGM：关";
+  }
+
+  async function tryStartFileBgm(){
+    if(!USE_FILE_BGM) return false;
+    if(!bgmAudio){
+      bgmAudio = new Audio(BGM_URL);
+      bgmAudio.loop = true;
+      bgmAudio.preload = "auto";
+      bgmAudio.volume = BGM_VOLUME;
+    }
+    try{
+      await bgmAudio.play();
+      bgmMode = "file";
+      return true;
+    }catch{
+      return false;
+    }
+  }
+
+  function stopFileBgm(){
+    if(bgmAudio){
+      bgmAudio.pause();
+      try{ bgmAudio.currentTime = 0; }catch{}
+    }
+  }
+
+  function startSynthBgm(){
+    if(!audioCtx){
+      audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+      master = audioCtx.createGain();
+      master.gain.value = 0.10;
+      master.connect(audioCtx.destination);
+    }
+    if(audioCtx.state==="suspended") audioCtx.resume();
+
+    const scale = [0,3,5,7,10];
+    const base = 48;
+
+    const playNote=(midi, dur, type="sine", det=0)=>{
+      const t0 = audioCtx.currentTime;
+      const o = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      const f = 440*Math.pow(2,(midi-69)/12);
+      o.type=type; o.frequency.value=f; o.detune.value=det;
+      g.gain.setValueAtTime(0.0001,t0);
+      g.gain.exponentialRampToValueAtTime(0.8,t0+0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001,t0+dur);
+      o.connect(g); g.connect(master);
+      o.start(t0); o.stop(t0+dur+0.02);
+    };
+
+    const tick=()=>{
+      const interval = 320;
+      const deg = scale[seqStep % scale.length];
+      const oct = (seqStep%10<5)?0:12;
+      const m = base + deg + oct + (Math.random()<0.12?12:0);
+      playNote(m, 0.20, "sine", rand(10,-10));
+      if(seqStep%4===0) playNote(base-12 + (seqStep%2?5:0), 0.55, "triangle", rand(4,-4));
+      if(Math.random()<0.24) playNote(base+24+pick(scale), 0.08, "sine", rand(16,-16));
+      seqStep++;
+      seqTimer=setTimeout(tick, interval);
+    };
+    tick();
+    bgmMode = "synth";
+  }
+
+  function stopSynthBgm(){
+    if(seqTimer){ clearTimeout(seqTimer); seqTimer=null; }
+  }
+
+  async function startBgm(){
+    if(bgmOn) return;
+    bgmOn = true;
+    setBgmButton();
+
+    // try file first
+    const ok = await tryStartFileBgm();
+    if(ok) return;
+
+    // fallback to synth
+    startSynthBgm();
+  }
+
+  function stopBgm(){
+    bgmOn = false;
+    setBgmButton();
+    if(bgmMode==="file") stopFileBgm();
+    if(bgmMode==="synth") stopSynthBgm();
+    bgmMode = "none";
+  }
+
+  $("#audio").addEventListener("click", async ()=>{
+    if(bgmOn) stopBgm();
+    else await startBgm();
+  });
+
+  // Try autostart (may fail)
+  async function autoStartBgmMaybe(){
+    if(!BGM_AUTOSTART) return;
+    // attempt: will often be blocked
+    const ok = await startBgm().then(()=>true).catch(()=>false);
+    if(!ok){
+      // If blocked, wait for first user gesture
+      const once = async ()=>{
+        window.removeEventListener("pointerdown", once, true);
+        window.removeEventListener("keydown", once, true);
+        if(!bgmOn) await startBgm();
+      };
+      window.addEventListener("pointerdown", once, true);
+      window.addEventListener("keydown", once, true);
+    }
+  }
+
+  // ---- Bindings
+  window.__buyFish = buyFish;
+  window.__toWarehouse = moveToWarehouse;
+  window.__toTank = moveToTank;
+  window.__synth = synthesize;
 
   $("#sell").addEventListener("click", sellByproduct);
   $("#save").addEventListener("click", ()=>{ saveToLocal(); toast("已保存"); });
@@ -1041,52 +1154,78 @@
     location.reload();
   });
 
-  // ---- Audio (procedural)
-  let audioOn=false, audioCtx=null, master=null, seqTimer=null, seqStep=0;
-  function startAudio(){
-    if(audioOn) return;
-    audioOn=true;
-    $("#audio").textContent="BGM：开";
-    if(!audioCtx){
-      audioCtx = new (window.AudioContext||window.webkitAudioContext)();
-      master = audioCtx.createGain();
-      master.gain.value = 0.10;
-      master.connect(audioCtx.destination);
+  // ---- Interaction (drag/click fish)
+  let pointer = {down:false, id:null, fishId:null};
+  function screenToStage(e){
+    const r = canvas.getBoundingClientRect();
+    return { x: e.clientX - r.left, y: e.clientY - r.top };
+  }
+  function fishHitTest(px,py){
+    for(let i=state.fishTank.length-1;i>=0;i--){
+      const f = state.fishTank[i];
+      const s = f.size*(0.95+0.08*f.grade);
+      const dx = px - f.x;
+      const dy = py - f.y;
+      if((dx*dx)/(s*s*1.7) + (dy*dy)/(s*s*1.2) <= 1.0) return f;
     }
-    if(audioCtx.state==="suspended") audioCtx.resume();
-    const scale = [0,3,5,7,10];
-    const base = 48;
-    const playNote=(midi, dur, type="sine", det=0)=>{
-      const t0 = audioCtx.currentTime;
-      const o = audioCtx.createOscillator();
-      const g = audioCtx.createGain();
-      const f = 440*Math.pow(2,(midi-69)/12);
-      o.type=type; o.frequency.value=f; o.detune.value=det;
-      g.gain.setValueAtTime(0.0001,t0);
-      g.gain.exponentialRampToValueAtTime(0.8,t0+0.01);
-      g.gain.exponentialRampToValueAtTime(0.0001,t0+dur);
-      o.connect(g); g.connect(master);
-      o.start(t0); o.stop(t0+dur+0.02);
-    };
-    const tick=()=>{
-      const interval = 320;
-      const deg = scale[seqStep % scale.length];
-      const oct = (seqStep%10<5)?0:12;
-      const m = base + deg + oct + (Math.random()<0.12?12:0);
-      playNote(m, 0.20, "sine", rand(10,-10));
-      if(seqStep%4===0) playNote(base-12 + (seqStep%2?5:0), 0.55, "triangle", rand(4,-4));
-      if(Math.random()<0.24) playNote(base+24+pick(scale), 0.08, "sine", rand(16,-16));
-      seqStep++;
-      seqTimer=setTimeout(tick, interval);
-    };
-    tick();
+    return null;
   }
-  function stopAudio(){
-    audioOn=false;
-    $("#audio").textContent="BGM：关";
-    if(seqTimer){ clearTimeout(seqTimer); seqTimer=null; }
+  canvas.addEventListener("pointerdown", (e)=>{
+    const p = screenToStage(e);
+    pointer.down=true; pointer.id=e.pointerId;
+    const f = fishHitTest(p.x,p.y);
+    if(f){
+      pointer.fishId = f.id;
+      f.drag.active = true;
+      f.drag.offX = p.x - f.x;
+      f.drag.offY = p.y - f.y;
+      f.drag.moved = false;
+      canvas.setPointerCapture?.(e.pointerId);
+      const idx = state.fishTank.findIndex(x=>x.id===f.id);
+      if(idx>=0){ state.fishTank.splice(idx,1); state.fishTank.push(f); }
+    }else{
+      pointer.fishId = null;
+    }
+  });
+  canvas.addEventListener("pointermove", (e)=>{
+    if(!pointer.down || pointer.id!==e.pointerId) return;
+    if(!pointer.fishId) return;
+    const f = state.fishTank.find(x=>x.id===pointer.fishId);
+    if(!f || !f.drag.active) return;
+
+    const p = screenToStage(e);
+    const w=stageRect.width, h=stageRect.height;
+    const marginX=40, top=90, bottom=h-50;
+
+    const nx = clamp(p.x - f.drag.offX, marginX, w-marginX);
+    const ny = clamp(p.y - f.drag.offY, top, bottom);
+    const dx = nx - f.x, dy = ny - f.y;
+    f.x = nx; f.y = ny;
+    f.vx = clamp(dx*12, -120, 120);
+    f.vy = clamp(dy*12, -80, 80);
+    if(Math.abs(dx)+Math.abs(dy) > 0.8) f.drag.moved = true;
+    scheduleAutosaveSoon();
+  });
+  function endPointer(e){
+    if(pointer.id!==e.pointerId) return;
+    pointer.down=false;
+    const fid = pointer.fishId;
+    pointer.fishId=null;
+    if(fid){
+      const f = state.fishTank.find(x=>x.id===fid);
+      if(f){
+        if(!f.drag.moved){
+          const count = 3 + f.grade*2 + (Math.random()*3|0);
+          spawnBubbles(f.x, f.y, count, f.grade);
+          f.anim.burst = 1;
+        }
+        f.drag.active=false;
+      }
+    }
+    try{ canvas.releasePointerCapture?.(e.pointerId); }catch{}
   }
-  $("#audio").addEventListener("click", ()=> audioOn?stopAudio():startAudio());
+  canvas.addEventListener("pointerup", endPointer);
+  canvas.addEventListener("pointercancel", endPointer);
 
   // ---- Main loop
   let last = now();
@@ -1178,6 +1317,7 @@
   function init(){
     resize();
     loadBackground();
+    setBgmButton();
 
     const loaded = loadFromLocal();
     if(loaded){
@@ -1194,12 +1334,7 @@
     renderPanel();
     requestAnimationFrame(step);
 
-    // If background fails, inform gently (optional)
-    setTimeout(()=>{
-      if(bg.failed){
-        toast("未找到 bg.png，已使用默认背景（把背景图放同目录或修改 BG_URL）");
-      }
-    }, 800);
+    autoStartBgmMaybe();
   }
 
   init();
